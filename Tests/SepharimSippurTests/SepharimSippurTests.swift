@@ -3,9 +3,11 @@ import XCTest
 @testable import SepharimSippur
 
 @MainActor
-private func makeTestSettingsStore(suiteName: String) -> SettingsStore {
+private func makeTestSettingsStore(suiteName: String, reset: Bool = false) -> SettingsStore {
     let defaults = UserDefaults(suiteName: suiteName)!
-    defaults.removePersistentDomain(forName: suiteName)
+    if reset {
+        defaults.removePersistentDomain(forName: suiteName)
+    }
 
     let folderURL = FileManager.default.temporaryDirectory
         .appending(component: suiteName, directoryHint: .isDirectory)
@@ -46,15 +48,28 @@ private struct TestFailure: LocalizedError {
     var errorDescription: String? { "Test failure" }
 }
 
+@MainActor
+private final class MockTranscriptionService: TranscriptionServicing {
+    var transcribeCalls = 0
+    var lastAudioURL: URL?
+    var result: Result<String, Error> = .success("Transcribed words")
+
+    func transcribeAudio(at audioURL: URL) async throws -> String {
+        transcribeCalls += 1
+        lastAudioURL = audioURL
+        return try result.get()
+    }
+}
+
 private final class MockNoteExporter: NoteExporting {
     var saveCalls = 0
-    var lastRecordingURL: URL?
+    var lastTranscription: String?
     var lastSettings: ExportSettings?
     var result: Result<URL, Error> = .success(URL(fileURLWithPath: "/tmp/test-note.md"))
 
-    func savePlaceholderNote(from recordingURL: URL, using settings: ExportSettings, date: Date) throws -> URL {
+    func saveNote(transcription: String, using settings: ExportSettings, date: Date) throws -> URL {
         saveCalls += 1
-        lastRecordingURL = recordingURL
+        lastTranscription = transcription
         lastSettings = settings
         return try result.get()
     }
@@ -64,7 +79,7 @@ final class SepharimSippurTests: XCTestCase {
     @MainActor
     func testAppModelStartsIdle() {
         let suiteName = "SepharimSippurTests.\(UUID().uuidString)"
-        let model = AppModel(settings: makeTestSettingsStore(suiteName: suiteName), recordingService: MockRecordingService())
+        let model = AppModel(settings: makeTestSettingsStore(suiteName: suiteName, reset: true), recordingService: MockRecordingService())
 
         XCTAssertEqual(model.phase, .idle)
         XCTAssertEqual(model.statusText, "Click the circle to start recording.")
@@ -73,7 +88,7 @@ final class SepharimSippurTests: XCTestCase {
     @MainActor
     func testSettingsPersistFormatModeAndFolder() {
         let suiteName = "SepharimSippurTests.settings.\(UUID().uuidString)"
-        let store = makeTestSettingsStore(suiteName: suiteName)
+        let store = makeTestSettingsStore(suiteName: suiteName, reset: true)
         let chosenFolder = FileManager.default.temporaryDirectory
             .appending(component: suiteName, directoryHint: .isDirectory)
             .appending(component: "Chosen", directoryHint: .isDirectory)
@@ -89,7 +104,6 @@ final class SepharimSippurTests: XCTestCase {
     }
 
     func testTxtDraftUsesSortableFilenameAndPlainTextBody() {
-        let recordingURL = URL(fileURLWithPath: "/tmp/audio.wav")
         let settings = ExportSettings(
             folderURL: URL(fileURLWithPath: "/tmp/notes"),
             format: .txt,
@@ -98,8 +112,8 @@ final class SepharimSippurTests: XCTestCase {
         let exporter = NoteExporter()
         let date = Date(timeIntervalSince1970: 0)
 
-        let draft = exporter.buildPlaceholderDraft(
-            from: recordingURL,
+        let draft = exporter.buildNoteDraft(
+            transcription: "Hello from Whisper.",
             using: settings,
             date: date,
             timeZone: TimeZone(secondsFromGMT: 0)!,
@@ -107,12 +121,10 @@ final class SepharimSippurTests: XCTestCase {
         )
 
         XCTAssertEqual(draft.fileName, "1970-01-01 00-00-00.txt")
-        XCTAssertTrue(draft.contents.contains("Transcription placeholder."))
-        XCTAssertTrue(draft.contents.contains("Source audio: audio.wav"))
+        XCTAssertEqual(draft.contents, "Hello from Whisper.\n")
     }
 
     func testMarkdownDraftUsesMinimalObsidianFormatting() {
-        let recordingURL = URL(fileURLWithPath: "/tmp/audio.wav")
         let settings = ExportSettings(
             folderURL: URL(fileURLWithPath: "/tmp/notes"),
             format: .md,
@@ -121,8 +133,8 @@ final class SepharimSippurTests: XCTestCase {
         let exporter = NoteExporter()
         let date = Date(timeIntervalSince1970: 0)
 
-        let draft = exporter.buildPlaceholderDraft(
-            from: recordingURL,
+        let draft = exporter.buildNoteDraft(
+            transcription: "Hello from Whisper.",
             using: settings,
             date: date,
             timeZone: TimeZone(secondsFromGMT: 0)!,
@@ -132,6 +144,7 @@ final class SepharimSippurTests: XCTestCase {
         XCTAssertEqual(draft.fileName, "1970-01-01 00-00-00.md")
         XCTAssertTrue(draft.contents.contains("# 1970-01-01 00:00:00"))
         XCTAssertTrue(draft.contents.contains("Created: 1970-01-01 00:00:00"))
+        XCTAssertTrue(draft.contents.contains("Hello from Whisper."))
         XCTAssertFalse(draft.contents.contains("[["))
     }
 
@@ -139,7 +152,7 @@ final class SepharimSippurTests: XCTestCase {
     func testPrimaryActionStartsRecordingWhenPermissionIsGranted() async {
         let service = MockRecordingService()
         let suiteName = "SepharimSippurTests.\(UUID().uuidString)"
-        let model = AppModel(settings: makeTestSettingsStore(suiteName: suiteName), recordingService: service)
+        let model = AppModel(settings: makeTestSettingsStore(suiteName: suiteName, reset: true), recordingService: service)
 
         await model.performPrimaryAction()
 
@@ -152,12 +165,14 @@ final class SepharimSippurTests: XCTestCase {
     @MainActor
     func testRecordingFlowStopsIntoSuccess() async {
         let service = MockRecordingService()
+        let transcriptionService = MockTranscriptionService()
         let exporter = MockNoteExporter()
         let suiteName = "SepharimSippurTests.\(UUID().uuidString)"
-        let settings = makeTestSettingsStore(suiteName: suiteName)
+        let settings = makeTestSettingsStore(suiteName: suiteName, reset: true)
         let model = AppModel(
             settings: settings,
             recordingService: service,
+            transcriptionService: transcriptionService,
             noteExporter: exporter
         )
 
@@ -170,8 +185,10 @@ final class SepharimSippurTests: XCTestCase {
         XCTAssertEqual(model.lastSavedNoteURL?.path, "/tmp/test-note.md")
         XCTAssertEqual(service.startCalls, 1)
         XCTAssertEqual(service.stopCalls, 1)
+        XCTAssertEqual(transcriptionService.transcribeCalls, 1)
+        XCTAssertEqual(transcriptionService.lastAudioURL?.path, "/tmp/test-recording.wav")
         XCTAssertEqual(exporter.saveCalls, 1)
-        XCTAssertEqual(exporter.lastRecordingURL?.path, "/tmp/test-recording.wav")
+        XCTAssertEqual(exporter.lastTranscription, "Transcribed words")
         XCTAssertEqual(exporter.lastSettings, settings.exportSettings)
     }
 
@@ -181,7 +198,7 @@ final class SepharimSippurTests: XCTestCase {
         service.permissionGranted = false
 
         let suiteName = "SepharimSippurTests.\(UUID().uuidString)"
-        let model = AppModel(settings: makeTestSettingsStore(suiteName: suiteName), recordingService: service)
+        let model = AppModel(settings: makeTestSettingsStore(suiteName: suiteName, reset: true), recordingService: service)
 
         await model.performPrimaryAction()
 
@@ -196,7 +213,7 @@ final class SepharimSippurTests: XCTestCase {
         service.stopResult = .failure(TestFailure())
 
         let suiteName = "SepharimSippurTests.\(UUID().uuidString)"
-        let model = AppModel(settings: makeTestSettingsStore(suiteName: suiteName), recordingService: service)
+        let model = AppModel(settings: makeTestSettingsStore(suiteName: suiteName, reset: true), recordingService: service)
 
         await model.performPrimaryAction()
         await model.performPrimaryAction()
@@ -208,12 +225,35 @@ final class SepharimSippurTests: XCTestCase {
     }
 
     @MainActor
+    func testTranscriptionFailureLeavesAppStableInErrorState() async {
+        let service = MockRecordingService()
+        let transcriptionService = MockTranscriptionService()
+        transcriptionService.result = .failure(TestFailure())
+
+        let suiteName = "SepharimSippurTests.\(UUID().uuidString)"
+        let model = AppModel(
+            settings: makeTestSettingsStore(suiteName: suiteName, reset: true),
+            recordingService: service,
+            transcriptionService: transcriptionService
+        )
+
+        await model.performPrimaryAction()
+        await model.performPrimaryAction()
+
+        XCTAssertEqual(model.phase, .error)
+        XCTAssertEqual(model.statusText, "Test failure")
+        XCTAssertEqual(service.startCalls, 1)
+        XCTAssertEqual(service.stopCalls, 1)
+        XCTAssertEqual(transcriptionService.transcribeCalls, 1)
+    }
+
+    @MainActor
     func testDuplicateStartErrorBecomesErrorState() async {
         let service = MockRecordingService()
         service.startResult = .failure(RecordingService.RecordingError.alreadyRecording)
 
         let suiteName = "SepharimSippurTests.\(UUID().uuidString)"
-        let model = AppModel(settings: makeTestSettingsStore(suiteName: suiteName), recordingService: service)
+        let model = AppModel(settings: makeTestSettingsStore(suiteName: suiteName, reset: true), recordingService: service)
 
         await model.performPrimaryAction()
 

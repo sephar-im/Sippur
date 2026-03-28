@@ -14,8 +14,16 @@ let package = Package(
             targets: ["SepharimSippurApp"]
         ),
     ],
+    dependencies: [
+        .package(url: "https://github.com/exPHAT/SwiftWhisper.git", exact: "1.2.0"),
+    ],
     targets: [
-        .target(name: "SepharimSippur"),
+        .target(
+            name: "SepharimSippur",
+            dependencies: [
+                .product(name: "SwiftWhisper", package: "SwiftWhisper"),
+            ]
+        ),
         .executableTarget(
             name: "SepharimSippurApp",
             dependencies: ["SepharimSippur"]

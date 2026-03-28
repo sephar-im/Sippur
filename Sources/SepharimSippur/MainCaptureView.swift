@@ -42,7 +42,7 @@ struct MainCaptureView: View {
                 }
                 .frame(maxWidth: 280)
 
-                Text("Click once to record. Click again to stop and save a placeholder note.")
+                Text("Click once to record. Click again to stop, transcribe locally, and save the note.")
                     .font(.system(size: 11, weight: .medium, design: .rounded))
                     .foregroundStyle(Color.white.opacity(0.45))
                     .multilineTextAlignment(.center)

@@ -1,7 +1,7 @@
 import Foundation
 
 protocol NoteExporting {
-    func savePlaceholderNote(from recordingURL: URL, using settings: ExportSettings, date: Date) throws -> URL
+    func saveNote(transcription: String, using settings: ExportSettings, date: Date) throws -> URL
 }
 
 struct NoteExporter: NoteExporting {
@@ -11,8 +11,8 @@ struct NoteExporter: NoteExporting {
         self.fileManager = fileManager
     }
 
-    func savePlaceholderNote(from recordingURL: URL, using settings: ExportSettings, date: Date = .now) throws -> URL {
-        let draft = buildPlaceholderDraft(from: recordingURL, using: settings, date: date)
+    func saveNote(transcription: String, using settings: ExportSettings, date: Date = .now) throws -> URL {
+        let draft = buildNoteDraft(transcription: transcription, using: settings, date: date)
 
         try fileManager.createDirectory(
             at: settings.folderURL,
@@ -24,8 +24,8 @@ struct NoteExporter: NoteExporting {
         return fileURL
     }
 
-    func buildPlaceholderDraft(
-        from recordingURL: URL,
+    func buildNoteDraft(
+        transcription: String,
         using settings: ExportSettings,
         date: Date,
         timeZone: TimeZone = .autoupdatingCurrent,
@@ -33,18 +33,13 @@ struct NoteExporter: NoteExporting {
     ) -> NoteDraft {
         let fileTimestamp = formatted(date: date, pattern: "yyyy-MM-dd HH-mm-ss", timeZone: timeZone, locale: locale)
         let displayTimestamp = formatted(date: date, pattern: "yyyy-MM-dd HH:mm:ss", timeZone: timeZone, locale: locale)
-        let placeholderBody = """
-        Transcription placeholder.
-
-        Audio captured locally.
-        Source audio: \(recordingURL.lastPathComponent)
-        """
+        let cleanTranscription = transcription.trimmingCharacters(in: .whitespacesAndNewlines)
 
         switch settings.format {
         case .txt:
             return NoteDraft(
                 fileName: "\(fileTimestamp).txt",
-                contents: placeholderBody + "\n"
+                contents: cleanTranscription + "\n"
             )
         case .md:
             let markdownBody: String
@@ -56,7 +51,7 @@ struct NoteExporter: NoteExporting {
 
                 Date: \(displayTimestamp)
 
-                \(placeholderBody)
+                \(cleanTranscription)
                 """
             case .obsidian:
                 markdownBody = """
@@ -64,7 +59,7 @@ struct NoteExporter: NoteExporting {
 
                 Created: \(displayTimestamp)
 
-                \(placeholderBody)
+                \(cleanTranscription)
                 """
             }
 

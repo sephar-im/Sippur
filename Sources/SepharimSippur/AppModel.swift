@@ -5,22 +5,25 @@ import AppKit
 final class AppModel: ObservableObject {
     @Published private(set) var phase: CapturePhase = .idle
     @Published private(set) var statusText = "Click the circle to start recording."
-    @Published private(set) var detailText = "A placeholder note will be saved automatically when recording stops."
+    @Published private(set) var detailText = "Recording will be transcribed locally and saved automatically when it stops."
     @Published private(set) var lastRecordingURL: URL?
     @Published private(set) var lastSavedNoteURL: URL?
 
     let settings: SettingsStore
     private let recordingService: RecordingServicing
+    private let transcriptionService: TranscriptionServicing
     private let noteExporter: NoteExporting
     private var isPerformingPrimaryAction = false
 
     init(
         settings: SettingsStore,
         recordingService: RecordingServicing = RecordingService(),
+        transcriptionService: TranscriptionServicing = WhisperTranscriptionService(),
         noteExporter: NoteExporting = NoteExporter()
     ) {
         self.settings = settings
         self.recordingService = recordingService
+        self.transcriptionService = transcriptionService
         self.noteExporter = noteExporter
         self.recordingService.unexpectedFailureHandler = { [weak self] error in
             self?.lastRecordingURL = nil
@@ -77,6 +80,7 @@ final class AppModel: ObservableObject {
     private func startRecording() async {
         if phase == .success {
             lastRecordingURL = nil
+            lastSavedNoteURL = nil
         }
 
         let permissionGranted = await recordingService.requestPermission()
@@ -104,11 +108,16 @@ final class AppModel: ObservableObject {
             let recordingURL = try await recordingService.stopRecording()
             lastRecordingURL = recordingURL
 
-            statusText = "Saving placeholder note."
+            statusText = "Transcribing locally with Whisper."
+            detailText = recordingURL.lastPathComponent
+
+            let transcription = try await transcriptionService.transcribeAudio(at: recordingURL)
+
+            statusText = "Saving transcribed note."
             detailText = settings.outputFolderURL.path
 
-            let noteURL = try noteExporter.savePlaceholderNote(
-                from: recordingURL,
+            let noteURL = try noteExporter.saveNote(
+                transcription: transcription,
                 using: settings.exportSettings,
                 date: .now
             )
