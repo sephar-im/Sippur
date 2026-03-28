@@ -148,10 +148,34 @@ final class SepharimSippurTests: XCTestCase {
         )
 
         XCTAssertEqual(draft.fileName, "1970-01-01 00-00-00.md")
+        XCTAssertTrue(draft.contents.hasPrefix("---\ncreated: 1970-01-01 00:00:00\n---\n\n"))
         XCTAssertTrue(draft.contents.contains("# 1970-01-01 00:00:00"))
-        XCTAssertTrue(draft.contents.contains("Created: 1970-01-01 00:00:00"))
         XCTAssertTrue(draft.contents.contains("Hello from Whisper."))
         XCTAssertFalse(draft.contents.contains("[["))
+    }
+
+    func testMarkdownDraftUsesSimpleNormalFormatting() {
+        let settings = ExportSettings(
+            folderURL: URL(fileURLWithPath: "/tmp/notes"),
+            format: .md,
+            mode: .normal
+        )
+        let exporter = NoteExporter()
+        let date = Date(timeIntervalSince1970: 0)
+
+        let draft = exporter.buildNoteDraft(
+            transcription: "Hello from Whisper.",
+            using: settings,
+            date: date,
+            timeZone: TimeZone(secondsFromGMT: 0)!,
+            locale: Locale(identifier: "en_US_POSIX")
+        )
+
+        XCTAssertEqual(draft.fileName, "1970-01-01 00-00-00.md")
+        XCTAssertTrue(draft.contents.contains("# Voice Note"))
+        XCTAssertTrue(draft.contents.contains("Date: 1970-01-01 00:00:00"))
+        XCTAssertTrue(draft.contents.contains("Hello from Whisper."))
+        XCTAssertFalse(draft.contents.hasPrefix("---\n"))
     }
 
     @MainActor

@@ -42,31 +42,41 @@ struct NoteExporter: NoteExporting {
                 contents: cleanTranscription + "\n"
             )
         case .md:
-            let markdownBody: String
-
-            switch settings.mode {
-            case .normal:
-                markdownBody = """
-                # Voice Note
-
-                Date: \(displayTimestamp)
-
-                \(cleanTranscription)
-                """
-            case .obsidian:
-                markdownBody = """
-                # \(displayTimestamp)
-
-                Created: \(displayTimestamp)
-
-                \(cleanTranscription)
-                """
-            }
-
             return NoteDraft(
                 fileName: "\(fileTimestamp).md",
-                contents: markdownBody + "\n"
+                contents: markdownContents(
+                    transcription: cleanTranscription,
+                    mode: settings.mode,
+                    displayTimestamp: displayTimestamp
+                ) + "\n"
             )
+        }
+    }
+
+    private func markdownContents(
+        transcription: String,
+        mode: OutputMode,
+        displayTimestamp: String
+    ) -> String {
+        switch mode {
+        case .normal:
+            return """
+            # Voice Note
+
+            Date: \(displayTimestamp)
+
+            \(transcription)
+            """
+        case .obsidian:
+            return """
+            ---
+            created: \(displayTimestamp)
+            ---
+
+            # \(displayTimestamp)
+
+            \(transcription)
+            """
         }
     }
 
