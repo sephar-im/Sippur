@@ -7,6 +7,9 @@ final class SettingsStore: ObservableObject {
         static let outputFolderPath = "outputFolderPath"
         static let outputFormat = "outputFormat"
         static let outputMode = "outputMode"
+        static let llmPostProcessingEnabled = "llmPostProcessingEnabled"
+        static let llmGeneratesTitle = "llmGeneratesTitle"
+        static let llmAddsObsidianWikilinks = "llmAddsObsidianWikilinks"
     }
 
     @Published var outputFormat: OutputFormat {
@@ -22,6 +25,24 @@ final class SettingsStore: ObservableObject {
     }
 
     @Published private(set) var outputFolderURL: URL
+
+    @Published var isLLMPostProcessingEnabled: Bool {
+        didSet {
+            userDefaults.set(isLLMPostProcessingEnabled, forKey: Keys.llmPostProcessingEnabled)
+        }
+    }
+
+    @Published var llmGeneratesTitle: Bool {
+        didSet {
+            userDefaults.set(llmGeneratesTitle, forKey: Keys.llmGeneratesTitle)
+        }
+    }
+
+    @Published var llmAddsObsidianWikilinks: Bool {
+        didSet {
+            userDefaults.set(llmAddsObsidianWikilinks, forKey: Keys.llmAddsObsidianWikilinks)
+        }
+    }
 
     private let userDefaults: UserDefaults
     private let fileManager: FileManager
@@ -40,6 +61,9 @@ final class SettingsStore: ObservableObject {
         outputFolderURL = storedPath.map(URL.init(fileURLWithPath:)) ?? defaultFolder
         outputFormat = OutputFormat(rawValue: userDefaults.string(forKey: Keys.outputFormat) ?? "") ?? .md
         outputMode = OutputMode(rawValue: userDefaults.string(forKey: Keys.outputMode) ?? "") ?? .normal
+        isLLMPostProcessingEnabled = userDefaults.bool(forKey: Keys.llmPostProcessingEnabled)
+        llmGeneratesTitle = userDefaults.bool(forKey: Keys.llmGeneratesTitle)
+        llmAddsObsidianWikilinks = userDefaults.bool(forKey: Keys.llmAddsObsidianWikilinks)
 
         ensureOutputFolderExists()
         persistOutputFolder()
@@ -55,6 +79,14 @@ final class SettingsStore: ObservableObject {
 
     var outputFolderPath: String {
         outputFolderURL.path
+    }
+
+    var llmPostProcessingSettings: LLMPostProcessingSettings {
+        LLMPostProcessingSettings(
+            isEnabled: isLLMPostProcessingEnabled,
+            generatesTitle: llmGeneratesTitle,
+            addsObsidianWikilinks: llmAddsObsidianWikilinks
+        )
     }
 
     func chooseOutputFolder() {

@@ -7,6 +7,13 @@ struct MenuBarContentView: View {
     @ObservedObject var model: AppModel
     @ObservedObject var settings: SettingsStore
 
+    private var llmEnabledBinding: Binding<Bool> {
+        Binding(
+            get: { settings.isLLMPostProcessingEnabled },
+            set: { model.setLLMPostProcessingEnabled($0) }
+        )
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Sepharim Sippur")
@@ -67,6 +74,37 @@ struct MenuBarContentView: View {
                     }
                 }
                 .pickerStyle(.segmented)
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Local LLM")
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+
+                Toggle("Enable LLM Cleanup", isOn: llmEnabledBinding)
+                    .toggleStyle(.switch)
+
+                if settings.isLLMPostProcessingEnabled {
+                    Toggle("Generate Cleaner Title", isOn: $settings.llmGeneratesTitle)
+                        .toggleStyle(.switch)
+                        .disabled(settings.outputFormat != .md)
+
+                    if settings.outputFormat == .md, settings.outputMode == .obsidian {
+                        Toggle("Add [[wikilinks]]", isOn: $settings.llmAddsObsidianWikilinks)
+                            .toggleStyle(.switch)
+                    }
+                }
+
+                HStack(spacing: 8) {
+                    if model.isPreparingLLM {
+                        ProgressView()
+                            .controlSize(.small)
+                    }
+
+                    Text(model.llmStatusText)
+                        .font(.system(size: 11, weight: .regular, design: .rounded))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
 
             if model.lastRecordingURL != nil {

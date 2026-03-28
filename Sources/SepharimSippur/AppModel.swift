@@ -11,10 +11,13 @@ final class AppModel: ObservableObject {
     @Published private(set) var detailText = "Recording will be transcribed locally and saved automatically when it stops."
     @Published private(set) var lastRecordingURL: URL?
     @Published private(set) var lastSavedNoteURL: URL?
+    @Published private(set) var llmStatusText = "LLM cleanup is disabled."
+    @Published private(set) var isPreparingLLM = false
 
     let settings: SettingsStore
     private let recordingService: RecordingServicing
     private let transcriptionService: TranscriptionServicing
+    private let llmPostProcessingService: LLMPostProcessingServicing
     private let noteExporter: NoteExporting
     private var isPerformingPrimaryAction = false
 
@@ -22,16 +25,22 @@ final class AppModel: ObservableObject {
         settings: SettingsStore,
         recordingService: RecordingServicing = RecordingService(),
         transcriptionService: TranscriptionServicing = WhisperTranscriptionService(),
+        llmPostProcessingService: LLMPostProcessingServicing = OllamaPostProcessingService(),
         noteExporter: NoteExporting = NoteExporter()
     ) {
         self.statusText = idleStatusText
         self.settings = settings
         self.recordingService = recordingService
         self.transcriptionService = transcriptionService
+        self.llmPostProcessingService = llmPostProcessingService
         self.noteExporter = noteExporter
         self.recordingService.unexpectedFailureHandler = { [weak self] error in
             self?.lastRecordingURL = nil
             self?.transitionToError(error.localizedDescription)
+        }
+
+        if settings.isLLMPostProcessingEnabled {
+            llmStatusText = "Checking local LLM."
         }
     }
 
@@ -53,6 +62,19 @@ final class AppModel: ObservableObject {
     func requestCaptureToggle() {
         Task {
             await performCaptureToggle()
+        }
+    }
+
+    func setLLMPostProcessingEnabled(_ isEnabled: Bool) {
+        settings.isLLMPostProcessingEnabled = isEnabled
+        if !isEnabled {
+            llmStatusText = "LLM cleanup is disabled."
+            isPreparingLLM = false
+            return
+        }
+
+        Task {
+            await prepareLLMIfNeeded()
         }
     }
 
@@ -112,21 +134,52 @@ final class AppModel: ObservableObject {
             detailText = recordingURL.lastPathComponent
 
             let transcription = try await transcriptionService.transcribeAudio(at: recordingURL)
+            var noteContent = NoteContent.whisperOnly(body: transcription)
+            var usedLLMFallback = false
 
+            if settings.llmPostProcessingSettings.isEnabled {
+                do {
+                    noteContent = try await llmPostProcessingService.postProcess(
+                        transcription: transcription,
+                        exportSettings: settings.exportSettings,
+                        llmSettings: settings.llmPostProcessingSettings,
+                        progress: { [weak self] summary, detail in
+                            self?.isPreparingLLM = true
+                            self?.llmStatusText = summary
+                            self?.statusText = summary
+                            if let detail {
+                                self?.detailText = detail
+                            }
+                        }
+                    )
+                    llmStatusText = "LLM ready."
+                } catch {
+                    usedLLMFallback = true
+                    noteContent = .whisperOnly(body: transcription)
+                    llmStatusText = "LLM unavailable. Whisper-only fallback will be used."
+                }
+            }
+
+            isPreparingLLM = false
             statusText = "Saving transcribed note."
             detailText = settings.outputFolderURL.path
 
             let noteURL = try noteExporter.saveNote(
-                transcription: transcription,
+                content: noteContent,
                 using: settings.exportSettings,
                 date: .now
             )
 
             lastSavedNoteURL = noteURL
             phase = .success
-            statusText = "Saved \(noteURL.lastPathComponent)."
+            if usedLLMFallback {
+                statusText = "Saved \(noteURL.lastPathComponent). Used Whisper transcription only."
+            } else {
+                statusText = "Saved \(noteURL.lastPathComponent)."
+            }
             detailText = noteURL.path
         } catch {
+            isPreparingLLM = false
             transitionToError(error.localizedDescription)
         }
     }
@@ -140,5 +193,31 @@ final class AppModel: ObservableObject {
         phase = .error
         statusText = message
         detailText = recoverableErrorDetailText
+    }
+
+    private func prepareLLMIfNeeded() async {
+        guard settings.llmPostProcessingSettings.isEnabled else {
+            llmStatusText = "LLM cleanup is disabled."
+            isPreparingLLM = false
+            return
+        }
+
+        guard !isPreparingLLM else { return }
+        isPreparingLLM = true
+
+        do {
+            _ = try await llmPostProcessingService.prepare(
+                settings: settings.llmPostProcessingSettings,
+                progress: { [weak self] summary, detail in
+                    self?.llmStatusText = summary
+                    _ = detail
+                }
+            )
+            llmStatusText = "LLM ready."
+        } catch {
+            llmStatusText = "LLM unavailable. Whisper-only fallback will be used."
+        }
+
+        isPreparingLLM = false
     }
 }

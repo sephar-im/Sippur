@@ -108,6 +108,29 @@ struct ExportSettings: Equatable {
     let mode: OutputMode
 }
 
+enum LocalLLMModel: String, Equatable {
+    case qwen25_05b = "qwen2.5:0.5b"
+    case qwen25_15b = "qwen2.5:1.5b"
+}
+
+struct LLMPostProcessingSettings: Equatable {
+    let isEnabled: Bool
+    let generatesTitle: Bool
+    let addsObsidianWikilinks: Bool
+}
+
+struct NoteContent: Equatable {
+    let body: String
+    let title: String?
+
+    static func whisperOnly(body: String) -> NoteContent {
+        NoteContent(
+            body: body.trimmingCharacters(in: .whitespacesAndNewlines),
+            title: nil
+        )
+    }
+}
+
 struct NoteDraft: Equatable {
     let fileName: String
     let contents: String

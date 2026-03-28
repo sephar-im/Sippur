@@ -1,7 +1,7 @@
 import Foundation
 
 protocol NoteExporting {
-    func saveNote(transcription: String, using settings: ExportSettings, date: Date) throws -> URL
+    func saveNote(content: NoteContent, using settings: ExportSettings, date: Date) throws -> URL
 }
 
 struct NoteExporter: NoteExporting {
@@ -25,8 +25,8 @@ struct NoteExporter: NoteExporting {
         self.fileManager = fileManager
     }
 
-    func saveNote(transcription: String, using settings: ExportSettings, date: Date = .now) throws -> URL {
-        let draft = buildNoteDraft(transcription: transcription, using: settings, date: date)
+    func saveNote(content: NoteContent, using settings: ExportSettings, date: Date = .now) throws -> URL {
+        let draft = buildNoteDraft(content: content, using: settings, date: date)
         let outputFolderURL = try prepareOutputFolder(at: settings.folderURL)
         let fileURL = try resolvedOutputURL(for: draft, in: outputFolderURL)
         try draft.contents.write(to: fileURL, atomically: true, encoding: .utf8)
@@ -34,7 +34,7 @@ struct NoteExporter: NoteExporting {
     }
 
     func buildNoteDraft(
-        transcription: String,
+        content: NoteContent,
         using settings: ExportSettings,
         date: Date,
         timeZone: TimeZone = .autoupdatingCurrent,
@@ -42,19 +42,22 @@ struct NoteExporter: NoteExporting {
     ) -> NoteDraft {
         let fileTimestamp = formatted(date: date, pattern: "yyyy-MM-dd HH-mm-ss", timeZone: timeZone, locale: locale)
         let displayTimestamp = formatted(date: date, pattern: "yyyy-MM-dd HH:mm:ss", timeZone: timeZone, locale: locale)
-        let cleanTranscription = transcription.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanContent = NoteContent(
+            body: content.body.trimmingCharacters(in: .whitespacesAndNewlines),
+            title: content.title?.trimmingCharacters(in: .whitespacesAndNewlines)
+        )
 
         switch settings.format {
         case .txt:
             return NoteDraft(
                 fileName: "\(fileTimestamp).txt",
-                contents: cleanTranscription + "\n"
+                contents: cleanContent.body + "\n"
             )
         case .md:
             return NoteDraft(
                 fileName: "\(fileTimestamp).md",
                 contents: markdownContents(
-                    transcription: cleanTranscription,
+                    content: cleanContent,
                     mode: settings.mode,
                     displayTimestamp: displayTimestamp
                 ) + "\n"
@@ -63,28 +66,30 @@ struct NoteExporter: NoteExporting {
     }
 
     private func markdownContents(
-        transcription: String,
+        content: NoteContent,
         mode: OutputMode,
         displayTimestamp: String
     ) -> String {
         switch mode {
         case .normal:
+            let title = content.title.flatMap { $0.isEmpty ? nil : $0 } ?? "Voice Note"
             return """
-            # Voice Note
+            # \(title)
 
             Date: \(displayTimestamp)
 
-            \(transcription)
+            \(content.body)
             """
         case .obsidian:
+            let title = content.title.flatMap { $0.isEmpty ? nil : $0 } ?? displayTimestamp
             return """
             ---
             created: \(displayTimestamp)
             ---
 
-            # \(displayTimestamp)
+            # \(title)
 
-            \(transcription)
+            \(content.body)
             """
         }
     }
