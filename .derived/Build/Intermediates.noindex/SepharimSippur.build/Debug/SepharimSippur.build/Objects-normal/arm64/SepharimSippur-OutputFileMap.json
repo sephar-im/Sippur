@@ -1,0 +1,69 @@
+{
+  "" : {
+    "diagnostics" : "/Users/om/Documents/SSSS/sepharim_sippur/.derived/Build/Intermediates.noindex/SepharimSippur.build/Debug/SepharimSippur.build/Objects-normal/arm64/SepharimSippur-primary.dia",
+    "emit-module-dependencies" : "/Users/om/Documents/SSSS/sepharim_sippur/.derived/Build/Intermediates.noindex/SepharimSippur.build/Debug/SepharimSippur.build/Objects-normal/arm64/SepharimSippur-primary-emit-module.d",
+    "emit-module-diagnostics" : "/Users/om/Documents/SSSS/sepharim_sippur/.derived/Build/Intermediates.noindex/SepharimSippur.build/Debug/SepharimSippur.build/Objects-normal/arm64/SepharimSippur-primary-emit-module.dia",
+    "pch" : "/Users/om/Documents/SSSS/sepharim_sippur/.derived/Build/Intermediates.noindex/SepharimSippur.build/Debug/SepharimSippur.build/Objects-normal/arm64/SepharimSippur-primary-Bridging-header.pch",
+    "swift-dependencies" : "/Users/om/Documents/SSSS/sepharim_sippur/.derived/Build/Intermediates.noindex/SepharimSippur.build/Debug/SepharimSippur.build/Objects-normal/arm64/SepharimSippur-primary.swiftdeps"
+  },
+  "/Users/om/Documents/SSSS/sepharim_sippur/Sources/SepharimSippur/AppModel.swift" : {
+    "const-values" : "/Users/om/Documents/SSSS/sepharim_sippur/.derived/Build/Intermediates.noindex/SepharimSippur.build/Debug/SepharimSippur.build/Objects-normal/arm64/AppModel.swiftconstvalues",
+    "dependencies" : "/Users/om/Documents/SSSS/sepharim_sippur/.derived/Build/Intermediates.noindex/SepharimSippur.build/Debug/SepharimSippur.build/Objects-normal/arm64/AppModel.d",
+    "diagnostics" : "/Users/om/Documents/SSSS/sepharim_sippur/.derived/Build/Intermediates.noindex/SepharimSippur.build/Debug/SepharimSippur.build/Objects-normal/arm64/AppModel.dia",
+    "index-unit-output-path" : "/SepharimSippur.build/Debug/SepharimSippur.build/Objects-normal/arm64/AppModel.o",
+    "llvm-bc" : "/Users/om/Documents/SSSS/sepharim_sippur/.derived/Build/Intermediates.noindex/SepharimSippur.build/Debug/SepharimSippur.build/Objects-normal/arm64/AppModel.bc",
+    "object" : "/Users/om/Documents/SSSS/sepharim_sippur/.derived/Build/Intermediates.noindex/SepharimSippur.build/Debug/SepharimSippur.build/Objects-normal/arm64/AppModel.o",
+    "swift-dependencies" : "/Users/om/Documents/SSSS/sepharim_sippur/.derived/Build/Intermediates.noindex/SepharimSippur.build/Debug/SepharimSippur.build/Objects-normal/arm64/AppModel.swiftdeps",
+    "swiftmodule" : "/Users/om/Documents/SSSS/sepharim_sippur/.derived/Build/Intermediates.noindex/SepharimSippur.build/Debug/SepharimSippur.build/Objects-normal/arm64/AppModel~partial.swiftmodule"
+  },
+  "/Users/om/Documents/SSSS/sepharim_sippur/Sources/SepharimSippur/CaptureCircleView.swift" : {
+    "const-values" : "/Users/om/Documents/SSSS/sepharim_sippur/.derived/Build/Intermediates.noindex/SepharimSippur.build/Debug/SepharimSippur.build/Objects-normal/arm64/CaptureCircleView.swiftconstvalues",
+    "dependencies" : "/Users/om/Documents/SSSS/sepharim_sippur/.derived/Build/Intermediates.noindex/SepharimSippur.build/Debug/SepharimSippur.build/Objects-normal/arm64/CaptureCircleView.d",
+    "diagnostics" : "/Users/om/Documents/SSSS/sepharim_sippur/.derived/Build/Intermediates.noindex/SepharimSippur.build/Debug/SepharimSippur.build/Objects-normal/arm64/CaptureCircleView.dia",
+    "index-unit-output-path" : "/SepharimSippur.build/Debug/SepharimSippur.build/Objects-normal/arm64/CaptureCircleView.o",
+    "llvm-bc" : "/Users/om/Documents/SSSS/sepharim_sippur/.derived/Build/Intermediates.noindex/SepharimSippur.build/Debug/SepharimSippur.build/Objects-normal/arm64/CaptureCircleView.bc",
+    "object" : "/Users/om/Documents/SSSS/sepharim_sippur/.derived/Build/Intermediates.noindex/SepharimSippur.build/Debug/SepharimSippur.build/Objects-normal/arm64/CaptureCircleView.o",
+    "swift-dependencies" : "/Users/om/Documents/SSSS/sepharim_sippur/.derived/Build/Intermediates.noindex/SepharimSippur.build/Debug/SepharimSippur.build/Objects-normal/arm64/CaptureCircleView.swiftdeps",
+    "swiftmodule" : "/Users/om/Documents/SSSS/sepharim_sippur/.derived/Build/Intermediates.noindex/SepharimSippur.build/Debug/SepharimSippur.build/Objects-normal/arm64/CaptureCircleView~partial.swiftmodule"
+  },
+  "/Users/om/Documents/SSSS/sepharim_sippur/Sources/SepharimSippur/MainCaptureView.swift" : {
+    "const-values" : "/Users/om/Documents/SSSS/sepharim_sippur/.derived/Build/Intermediates.noindex/SepharimSippur.build/Debug/SepharimSippur.build/Objects-normal/arm64/MainCaptureView.swiftconstvalues",
+    "dependencies" : "/Users/om/Documents/SSSS/sepharim_sippur/.derived/Build/Intermediates.noindex/SepharimSippur.build/Debug/SepharimSippur.build/Objects-normal/arm64/MainCaptureView.d",
+    "diagnostics" : "/Users/om/Documents/SSSS/sepharim_sippur/.derived/Build/Intermediates.noindex/SepharimSippur.build/Debug/SepharimSippur.build/Objects-normal/arm64/MainCaptureView.dia",
+    "index-unit-output-path" : "/SepharimSippur.build/Debug/SepharimSippur.build/Objects-normal/arm64/MainCaptureView.o",
+    "llvm-bc" : "/Users/om/Documents/SSSS/sepharim_sippur/.derived/Build/Intermediates.noindex/SepharimSippur.build/Debug/SepharimSippur.build/Objects-normal/arm64/MainCaptureView.bc",
+    "object" : "/Users/om/Documents/SSSS/sepharim_sippur/.derived/Build/Intermediates.noindex/SepharimSippur.build/Debug/SepharimSippur.build/Objects-normal/arm64/MainCaptureView.o",
+    "swift-dependencies" : "/Users/om/Documents/SSSS/sepharim_sippur/.derived/Build/Intermediates.noindex/SepharimSippur.build/Debug/SepharimSippur.build/Objects-normal/arm64/MainCaptureView.swiftdeps",
+    "swiftmodule" : "/Users/om/Documents/SSSS/sepharim_sippur/.derived/Build/Intermediates.noindex/SepharimSippur.build/Debug/SepharimSippur.build/Objects-normal/arm64/MainCaptureView~partial.swiftmodule"
+  },
+  "/Users/om/Documents/SSSS/sepharim_sippur/Sources/SepharimSippur/MenuBarContentView.swift" : {
+    "const-values" : "/Users/om/Documents/SSSS/sepharim_sippur/.derived/Build/Intermediates.noindex/SepharimSippur.build/Debug/SepharimSippur.build/Objects-normal/arm64/MenuBarContentView.swiftconstvalues",
+    "dependencies" : "/Users/om/Documents/SSSS/sepharim_sippur/.derived/Build/Intermediates.noindex/SepharimSippur.build/Debug/SepharimSippur.build/Objects-normal/arm64/MenuBarContentView.d",
+    "diagnostics" : "/Users/om/Documents/SSSS/sepharim_sippur/.derived/Build/Intermediates.noindex/SepharimSippur.build/Debug/SepharimSippur.build/Objects-normal/arm64/MenuBarContentView.dia",
+    "index-unit-output-path" : "/SepharimSippur.build/Debug/SepharimSippur.build/Objects-normal/arm64/MenuBarContentView.o",
+    "llvm-bc" : "/Users/om/Documents/SSSS/sepharim_sippur/.derived/Build/Intermediates.noindex/SepharimSippur.build/Debug/SepharimSippur.build/Objects-normal/arm64/MenuBarContentView.bc",
+    "object" : "/Users/om/Documents/SSSS/sepharim_sippur/.derived/Build/Intermediates.noindex/SepharimSippur.build/Debug/SepharimSippur.build/Objects-normal/arm64/MenuBarContentView.o",
+    "swift-dependencies" : "/Users/om/Documents/SSSS/sepharim_sippur/.derived/Build/Intermediates.noindex/SepharimSippur.build/Debug/SepharimSippur.build/Objects-normal/arm64/MenuBarContentView.swiftdeps",
+    "swiftmodule" : "/Users/om/Documents/SSSS/sepharim_sippur/.derived/Build/Intermediates.noindex/SepharimSippur.build/Debug/SepharimSippur.build/Objects-normal/arm64/MenuBarContentView~partial.swiftmodule"
+  },
+  "/Users/om/Documents/SSSS/sepharim_sippur/Sources/SepharimSippur/Models.swift" : {
+    "const-values" : "/Users/om/Documents/SSSS/sepharim_sippur/.derived/Build/Intermediates.noindex/SepharimSippur.build/Debug/SepharimSippur.build/Objects-normal/arm64/Models.swiftconstvalues",
+    "dependencies" : "/Users/om/Documents/SSSS/sepharim_sippur/.derived/Build/Intermediates.noindex/SepharimSippur.build/Debug/SepharimSippur.build/Objects-normal/arm64/Models.d",
+    "diagnostics" : "/Users/om/Documents/SSSS/sepharim_sippur/.derived/Build/Intermediates.noindex/SepharimSippur.build/Debug/SepharimSippur.build/Objects-normal/arm64/Models.dia",
+    "index-unit-output-path" : "/SepharimSippur.build/Debug/SepharimSippur.build/Objects-normal/arm64/Models.o",
+    "llvm-bc" : "/Users/om/Documents/SSSS/sepharim_sippur/.derived/Build/Intermediates.noindex/SepharimSippur.build/Debug/SepharimSippur.build/Objects-normal/arm64/Models.bc",
+    "object" : "/Users/om/Documents/SSSS/sepharim_sippur/.derived/Build/Intermediates.noindex/SepharimSippur.build/Debug/SepharimSippur.build/Objects-normal/arm64/Models.o",
+    "swift-dependencies" : "/Users/om/Documents/SSSS/sepharim_sippur/.derived/Build/Intermediates.noindex/SepharimSippur.build/Debug/SepharimSippur.build/Objects-normal/arm64/Models.swiftdeps",
+    "swiftmodule" : "/Users/om/Documents/SSSS/sepharim_sippur/.derived/Build/Intermediates.noindex/SepharimSippur.build/Debug/SepharimSippur.build/Objects-normal/arm64/Models~partial.swiftmodule"
+  },
+  "/Users/om/Documents/SSSS/sepharim_sippur/Sources/SepharimSippur/SepharimSippurApp.swift" : {
+    "const-values" : "/Users/om/Documents/SSSS/sepharim_sippur/.derived/Build/Intermediates.noindex/SepharimSippur.build/Debug/SepharimSippur.build/Objects-normal/arm64/SepharimSippurApp.swiftconstvalues",
+    "dependencies" : "/Users/om/Documents/SSSS/sepharim_sippur/.derived/Build/Intermediates.noindex/SepharimSippur.build/Debug/SepharimSippur.build/Objects-normal/arm64/SepharimSippurApp.d",
+    "diagnostics" : "/Users/om/Documents/SSSS/sepharim_sippur/.derived/Build/Intermediates.noindex/SepharimSippur.build/Debug/SepharimSippur.build/Objects-normal/arm64/SepharimSippurApp.dia",
+    "index-unit-output-path" : "/SepharimSippur.build/Debug/SepharimSippur.build/Objects-normal/arm64/SepharimSippurApp.o",
+    "llvm-bc" : "/Users/om/Documents/SSSS/sepharim_sippur/.derived/Build/Intermediates.noindex/SepharimSippur.build/Debug/SepharimSippur.build/Objects-normal/arm64/SepharimSippurApp.bc",
+    "object" : "/Users/om/Documents/SSSS/sepharim_sippur/.derived/Build/Intermediates.noindex/SepharimSippur.build/Debug/SepharimSippur.build/Objects-normal/arm64/SepharimSippurApp.o",
+    "swift-dependencies" : "/Users/om/Documents/SSSS/sepharim_sippur/.derived/Build/Intermediates.noindex/SepharimSippur.build/Debug/SepharimSippur.build/Objects-normal/arm64/SepharimSippurApp.swiftdeps",
+    "swiftmodule" : "/Users/om/Documents/SSSS/sepharim_sippur/.derived/Build/Intermediates.noindex/SepharimSippur.build/Debug/SepharimSippur.build/Objects-normal/arm64/SepharimSippurApp~partial.swiftmodule"
+  }
+}
