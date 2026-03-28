@@ -25,6 +25,9 @@ public struct SepharimSippurRootScene: Scene {
     public var body: some Scene {
         WindowGroup(id: "capture") {
             MainCaptureView(model: model)
+                .task {
+                    await model.bootstrapDependenciesOnLaunch()
+                }
         }
         .defaultSize(width: 420, height: 460)
         .windowResizability(.contentSize)

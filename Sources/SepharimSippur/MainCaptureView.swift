@@ -21,6 +21,7 @@ struct MainCaptureView: View {
 
                 CaptureCircleView(
                     phase: model.phase,
+                    isEnabled: model.isCaptureReady,
                     action: model.requestCaptureToggle
                 )
 
@@ -42,11 +43,29 @@ struct MainCaptureView: View {
                 }
                 .frame(maxWidth: 280)
 
-                Text("Click the circle or press \(GlobalShortcutMonitor.defaultShortcutDisplayName). Press again to stop, transcribe locally, and save.")
+                VStack(spacing: 10) {
+                    if model.isBootstrappingDependencies {
+                        ProgressView()
+                            .controlSize(.small)
+                            .tint(.white.opacity(0.86))
+                    } else if model.hasBlockingSetupFailure {
+                        Button("Retry Setup") {
+                            model.retryDependencyBootstrap()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(Color.white.opacity(0.18))
+                    }
+
+                    Text(
+                        model.isCaptureReady
+                        ? "Click the circle or press \(GlobalShortcutMonitor.defaultShortcutDisplayName). Press again to stop, transcribe locally, and save."
+                        : "Capture becomes available as soon as local transcription setup finishes."
+                    )
                     .font(.system(size: 11, weight: .medium, design: .rounded))
                     .foregroundStyle(Color.white.opacity(0.45))
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: 260)
+                }
 
                 Spacer()
             }

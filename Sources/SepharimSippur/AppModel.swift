@@ -4,13 +4,18 @@ import AppKit
 @MainActor
 final class AppModel: ObservableObject {
     private let idleStatusText = "Click the circle or press \(GlobalShortcutMonitor.defaultShortcutDisplayName) to start recording."
+    private let idleDetailText = "Recording will be transcribed locally and saved automatically when it stops."
     private let recoverableErrorDetailText = "The app stayed stable. Click the circle or press \(GlobalShortcutMonitor.defaultShortcutDisplayName) to try recording again."
+    private let bootstrapFailureDetailText = "Local transcription setup did not finish. Retry setup to keep the app ready for fast capture."
 
     @Published private(set) var phase: CapturePhase = .idle
     @Published private(set) var statusText: String
-    @Published private(set) var detailText = "Recording will be transcribed locally and saved automatically when it stops."
+    @Published private(set) var detailText: String
     @Published private(set) var lastRecordingURL: URL?
     @Published private(set) var lastSavedNoteURL: URL?
+    @Published private(set) var isCaptureReady = false
+    @Published private(set) var isBootstrappingDependencies = false
+    @Published private(set) var hasBlockingSetupFailure = false
     @Published private(set) var llmStatusText = "LLM cleanup is disabled."
     @Published private(set) var isPreparingLLM = false
 
@@ -20,6 +25,7 @@ final class AppModel: ObservableObject {
     private let llmPostProcessingService: LLMPostProcessingServicing
     private let noteExporter: NoteExporting
     private var isPerformingPrimaryAction = false
+    private var hasStartedDependencyBootstrap = false
 
     init(
         settings: SettingsStore,
@@ -29,6 +35,7 @@ final class AppModel: ObservableObject {
         noteExporter: NoteExporting = NoteExporter()
     ) {
         self.statusText = idleStatusText
+        self.detailText = idleDetailText
         self.settings = settings
         self.recordingService = recordingService
         self.transcriptionService = transcriptionService
@@ -40,7 +47,7 @@ final class AppModel: ObservableObject {
         }
 
         if settings.isLLMPostProcessingEnabled {
-            llmStatusText = "Checking local LLM."
+            llmStatusText = "LLM setup will start after transcription is ready."
         }
     }
 
@@ -65,6 +72,27 @@ final class AppModel: ObservableObject {
         }
     }
 
+    func bootstrapDependenciesOnLaunch() async {
+        guard !hasStartedDependencyBootstrap else { return }
+        hasStartedDependencyBootstrap = true
+
+        await bootstrapRequiredDependencies()
+
+        if isCaptureReady, settings.llmPostProcessingSettings.isEnabled {
+            await prepareLLMIfNeeded()
+        }
+    }
+
+    func retryDependencyBootstrap() {
+        Task {
+            await bootstrapRequiredDependencies()
+
+            if isCaptureReady, settings.llmPostProcessingSettings.isEnabled {
+                await prepareLLMIfNeeded()
+            }
+        }
+    }
+
     func setLLMPostProcessingEnabled(_ isEnabled: Bool) {
         settings.isLLMPostProcessingEnabled = isEnabled
         if !isEnabled {
@@ -72,6 +100,19 @@ final class AppModel: ObservableObject {
             isPreparingLLM = false
             return
         }
+
+        guard isCaptureReady else {
+            llmStatusText = "LLM setup will start after transcription is ready."
+            return
+        }
+
+        Task {
+            await prepareLLMIfNeeded()
+        }
+    }
+
+    func retryLLMSetup() {
+        guard settings.llmPostProcessingSettings.isEnabled, isCaptureReady else { return }
 
         Task {
             await prepareLLMIfNeeded()
@@ -89,6 +130,7 @@ final class AppModel: ObservableObject {
     }
 
     func performCaptureToggle() async {
+        guard isCaptureReady else { return }
         guard !isPerformingPrimaryAction else { return }
         isPerformingPrimaryAction = true
         defer { isPerformingPrimaryAction = false }
@@ -187,6 +229,41 @@ final class AppModel: ObservableObject {
     private func clearSessionArtifacts() {
         lastRecordingURL = nil
         lastSavedNoteURL = nil
+    }
+
+    private func bootstrapRequiredDependencies() async {
+        guard !isBootstrappingDependencies else { return }
+
+        isBootstrappingDependencies = true
+        hasBlockingSetupFailure = false
+        phase = .processing
+        statusText = "Preparing local transcription."
+        detailText = "Checking Whisper assets."
+
+        do {
+            try await transcriptionService.prepare(
+                progress: { [weak self] summary, detail in
+                    self?.statusText = summary
+                    if let detail {
+                        self?.detailText = detail
+                    }
+                }
+            )
+
+            isCaptureReady = true
+            hasBlockingSetupFailure = false
+            phase = .idle
+            statusText = idleStatusText
+            detailText = idleDetailText
+        } catch {
+            isCaptureReady = false
+            hasBlockingSetupFailure = true
+            phase = .error
+            statusText = error.localizedDescription
+            detailText = bootstrapFailureDetailText
+        }
+
+        isBootstrappingDependencies = false
     }
 
     private func transitionToError(_ message: String) {

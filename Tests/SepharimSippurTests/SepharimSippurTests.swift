@@ -56,9 +56,17 @@ private struct TestFailure: LocalizedError {
 
 @MainActor
 private final class MockTranscriptionService: TranscriptionServicing {
+    var prepareCalls = 0
     var transcribeCalls = 0
     var lastAudioURL: URL?
+    var prepareResult: Result<Void, Error> = .success(())
     var result: Result<String, Error> = .success("Transcribed words")
+
+    func prepare(progress: @escaping @MainActor (String, String?) -> Void) async throws {
+        prepareCalls += 1
+        progress("Checking local transcription.", "ggml-base.bin")
+        try prepareResult.get()
+    }
 
     func transcribeAudio(at audioURL: URL) async throws -> String {
         transcribeCalls += 1
@@ -259,10 +267,88 @@ final class SepharimSippurTests: XCTestCase {
     }
 
     @MainActor
+    func testBootstrapOnLaunchPreparesTranscriptionAndReturnsToIdle() async {
+        let transcriptionService = MockTranscriptionService()
+        let suiteName = "SepharimSippurTests.\(UUID().uuidString)"
+        let model = AppModel(
+            settings: makeTestSettingsStore(suiteName: suiteName, reset: true),
+            recordingService: MockRecordingService(),
+            transcriptionService: transcriptionService
+        )
+
+        await model.bootstrapDependenciesOnLaunch()
+
+        XCTAssertEqual(transcriptionService.prepareCalls, 1)
+        XCTAssertTrue(model.isCaptureReady)
+        XCTAssertFalse(model.hasBlockingSetupFailure)
+        XCTAssertEqual(model.phase, .idle)
+        XCTAssertEqual(model.statusText, "Click the circle or press Command-Shift-R to start recording.")
+    }
+
+    @MainActor
+    func testBootstrapFailureBlocksCaptureUntilRetry() async {
+        let recordingService = MockRecordingService()
+        let transcriptionService = MockTranscriptionService()
+        transcriptionService.prepareResult = .failure(TestFailure())
+        let suiteName = "SepharimSippurTests.\(UUID().uuidString)"
+        let model = AppModel(
+            settings: makeTestSettingsStore(suiteName: suiteName, reset: true),
+            recordingService: recordingService,
+            transcriptionService: transcriptionService
+        )
+
+        await model.bootstrapDependenciesOnLaunch()
+        await model.performCaptureToggle()
+
+        XCTAssertFalse(model.isCaptureReady)
+        XCTAssertTrue(model.hasBlockingSetupFailure)
+        XCTAssertEqual(model.phase, .error)
+        XCTAssertEqual(model.statusText, "Test failure")
+        XCTAssertEqual(recordingService.startCalls, 0)
+
+        transcriptionService.prepareResult = .success(())
+        model.retryDependencyBootstrap()
+        try? await Task.sleep(nanoseconds: 50_000_000)
+
+        XCTAssertTrue(model.isCaptureReady)
+        XCTAssertFalse(model.hasBlockingSetupFailure)
+        XCTAssertEqual(model.phase, .idle)
+    }
+
+    @MainActor
+    func testBootstrapOnLaunchPreparesOptionalLLMWhenEnabled() async {
+        let transcriptionService = MockTranscriptionService()
+        let llmService = MockLLMPostProcessingService()
+        let suiteName = "SepharimSippurTests.\(UUID().uuidString)"
+        let settings = makeTestSettingsStore(suiteName: suiteName, reset: true)
+        settings.isLLMPostProcessingEnabled = true
+
+        let model = AppModel(
+            settings: settings,
+            recordingService: MockRecordingService(),
+            transcriptionService: transcriptionService,
+            llmPostProcessingService: llmService
+        )
+
+        await model.bootstrapDependenciesOnLaunch()
+
+        XCTAssertEqual(transcriptionService.prepareCalls, 1)
+        XCTAssertEqual(llmService.prepareCalls, 1)
+        XCTAssertEqual(model.llmStatusText, "LLM ready.")
+    }
+
+    @MainActor
     func testPrimaryActionStartsRecordingWhenPermissionIsGranted() async {
         let service = MockRecordingService()
+        let transcriptionService = MockTranscriptionService()
         let suiteName = "SepharimSippurTests.\(UUID().uuidString)"
-        let model = AppModel(settings: makeTestSettingsStore(suiteName: suiteName, reset: true), recordingService: service)
+        let model = AppModel(
+            settings: makeTestSettingsStore(suiteName: suiteName, reset: true),
+            recordingService: service,
+            transcriptionService: transcriptionService
+        )
+
+        await model.bootstrapDependenciesOnLaunch()
 
         await model.performCaptureToggle()
 
@@ -286,6 +372,7 @@ final class SepharimSippurTests: XCTestCase {
             noteExporter: exporter
         )
 
+        await model.bootstrapDependenciesOnLaunch()
         await model.performCaptureToggle()
         await model.performCaptureToggle()
 
@@ -321,6 +408,7 @@ final class SepharimSippurTests: XCTestCase {
             noteExporter: exporter
         )
 
+        await model.bootstrapDependenciesOnLaunch()
         await model.performCaptureToggle()
         await model.performCaptureToggle()
 
@@ -333,9 +421,16 @@ final class SepharimSippurTests: XCTestCase {
     func testDeniedPermissionMovesToErrorState() async {
         let service = MockRecordingService()
         service.permissionGranted = false
+        let transcriptionService = MockTranscriptionService()
 
         let suiteName = "SepharimSippurTests.\(UUID().uuidString)"
-        let model = AppModel(settings: makeTestSettingsStore(suiteName: suiteName, reset: true), recordingService: service)
+        let model = AppModel(
+            settings: makeTestSettingsStore(suiteName: suiteName, reset: true),
+            recordingService: service,
+            transcriptionService: transcriptionService
+        )
+
+        await model.bootstrapDependenciesOnLaunch()
 
         await model.performCaptureToggle()
 
@@ -348,10 +443,16 @@ final class SepharimSippurTests: XCTestCase {
     func testStopFailureLeavesAppStableInErrorState() async {
         let service = MockRecordingService()
         service.stopResult = .failure(TestFailure())
+        let transcriptionService = MockTranscriptionService()
 
         let suiteName = "SepharimSippurTests.\(UUID().uuidString)"
-        let model = AppModel(settings: makeTestSettingsStore(suiteName: suiteName, reset: true), recordingService: service)
+        let model = AppModel(
+            settings: makeTestSettingsStore(suiteName: suiteName, reset: true),
+            recordingService: service,
+            transcriptionService: transcriptionService
+        )
 
+        await model.bootstrapDependenciesOnLaunch()
         await model.performCaptureToggle()
         await model.performCaptureToggle()
 
@@ -374,6 +475,7 @@ final class SepharimSippurTests: XCTestCase {
             transcriptionService: transcriptionService
         )
 
+        await model.bootstrapDependenciesOnLaunch()
         await model.performCaptureToggle()
         await model.performCaptureToggle()
 
@@ -403,6 +505,7 @@ final class SepharimSippurTests: XCTestCase {
             noteExporter: exporter
         )
 
+        await model.bootstrapDependenciesOnLaunch()
         await model.performCaptureToggle()
         await model.performCaptureToggle()
 
@@ -427,6 +530,7 @@ final class SepharimSippurTests: XCTestCase {
             noteExporter: exporter
         )
 
+        await model.bootstrapDependenciesOnLaunch()
         await model.performCaptureToggle()
 
         let firstStop = Task { await model.performCaptureToggle() }
@@ -447,10 +551,16 @@ final class SepharimSippurTests: XCTestCase {
     func testDuplicateStartErrorBecomesErrorState() async {
         let service = MockRecordingService()
         service.startResult = .failure(RecordingService.RecordingError.alreadyRecording)
+        let transcriptionService = MockTranscriptionService()
 
         let suiteName = "SepharimSippurTests.\(UUID().uuidString)"
-        let model = AppModel(settings: makeTestSettingsStore(suiteName: suiteName, reset: true), recordingService: service)
+        let model = AppModel(
+            settings: makeTestSettingsStore(suiteName: suiteName, reset: true),
+            recordingService: service,
+            transcriptionService: transcriptionService
+        )
 
+        await model.bootstrapDependenciesOnLaunch()
         await model.performCaptureToggle()
 
         XCTAssertEqual(model.phase, .error)

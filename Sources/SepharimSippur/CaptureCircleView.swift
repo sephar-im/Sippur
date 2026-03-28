@@ -2,6 +2,7 @@ import SwiftUI
 
 struct CaptureCircleView: View {
     let phase: CapturePhase
+    let isEnabled: Bool
     let action: () -> Void
 
     @State private var pulse = false
@@ -49,7 +50,8 @@ struct CaptureCircleView: View {
             .frame(width: 260, height: 260)
         }
         .buttonStyle(.plain)
-        .disabled(!phase.isInteractive)
+        .disabled(!phase.isInteractive || !isEnabled)
+        .opacity(isEnabled ? 1.0 : 0.84)
         .animation(.easeInOut(duration: 0.28), value: phase)
         .onAppear {
             updateAnimation(for: phase)

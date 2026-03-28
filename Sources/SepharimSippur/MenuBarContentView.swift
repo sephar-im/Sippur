@@ -31,6 +31,38 @@ struct MenuBarContentView: View {
                 .font(.system(size: 12, weight: .medium, design: .rounded))
                 .foregroundStyle(.secondary)
 
+            if !model.isCaptureReady {
+                Divider()
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Setup")
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+
+                    HStack(spacing: 8) {
+                        if model.isBootstrappingDependencies {
+                            ProgressView()
+                                .controlSize(.small)
+                        }
+
+                        Text(model.statusText)
+                            .font(.system(size: 11, weight: .regular, design: .rounded))
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    Text(model.detailText)
+                        .font(.system(size: 11, weight: .regular, design: .rounded))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    if model.hasBlockingSetupFailure {
+                        Button("Retry Setup") {
+                            model.retryDependencyBootstrap()
+                        }
+                    }
+                }
+            }
+
             Divider()
 
             VStack(alignment: .leading, spacing: 6) {
@@ -104,6 +136,15 @@ struct MenuBarContentView: View {
                         .font(.system(size: 11, weight: .regular, design: .rounded))
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
+                }
+
+                if settings.isLLMPostProcessingEnabled,
+                   model.isCaptureReady,
+                   !model.isPreparingLLM,
+                   model.llmStatusText != "LLM ready." {
+                    Button("Retry LLM Setup") {
+                        model.retryLLMSetup()
+                    }
                 }
             }
 
