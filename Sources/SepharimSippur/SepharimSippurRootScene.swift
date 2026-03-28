@@ -1,43 +1,53 @@
 import SwiftUI
 import Foundation
+import AppKit
 
 public struct SepharimSippurRootScene: Scene {
     @StateObject private var settings: SettingsStore
     @StateObject private var model: AppModel
+    @StateObject private var capturePanelController: CapturePanelController
     private let shortcutMonitor: GlobalShortcutMonitor
 
     public init() {
         let settings = SettingsStore()
         let model = AppModel(settings: settings)
+        let capturePanelController = CapturePanelController()
         let shortcutMonitor = GlobalShortcutMonitor {
             model.requestCaptureToggle()
         }
 
         _settings = StateObject(wrappedValue: settings)
         _model = StateObject(wrappedValue: model)
+        _capturePanelController = StateObject(wrappedValue: capturePanelController)
         self.shortcutMonitor = shortcutMonitor
 
         DispatchQueue.main.async {
+            NSApp.setActivationPolicy(.regular)
+            ApplicationIconLoader.applyAppIcon()
+            capturePanelController.installIfNeeded(model: model)
+            capturePanelController.showCaptureWindow()
             shortcutMonitor.startIfNeeded()
+            Task { @MainActor in
+                await model.bootstrapDependenciesOnLaunch()
+            }
         }
     }
 
     public var body: some Scene {
-        WindowGroup(id: "capture") {
-            MainCaptureView(model: model)
-                .task {
-                    await model.bootstrapDependenciesOnLaunch()
-                }
+        MenuBarExtra("Sepharim Sippur", systemImage: model.menuBarSymbolName) {
+            MenuBarContentView(
+                model: model,
+                settings: settings,
+                showCaptureWindow: capturePanelController.showCaptureWindow
+            )
         }
-        .defaultSize(width: 420, height: 460)
-        .windowResizability(.contentSize)
+        .menuBarExtraStyle(.window)
         .commands {
             CommandGroup(replacing: .appSettings) {}
         }
 
-        MenuBarExtra("Sepharim Sippur", systemImage: model.menuBarSymbolName) {
-            MenuBarContentView(model: model, settings: settings)
+        Settings {
+            EmptyView()
         }
-        .menuBarExtraStyle(.window)
     }
 }

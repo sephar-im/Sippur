@@ -12,47 +12,43 @@ struct CaptureCircleView: View {
         Button(action: action) {
             ZStack {
                 Circle()
-                    .trim(
-                        from: phase.outerRingTrimRange.lowerBound,
-                        to: phase.outerRingTrimRange.upperBound
-                    )
-                    .stroke(
-                        phase.accentColor.opacity(0.28),
-                        style: StrokeStyle(lineWidth: 22, lineCap: .round)
-                    )
-                    .frame(width: 240, height: 240)
-                    .scaleEffect(phase.shouldPulse ? (pulse ? 1.10 : 0.90) : 1.0)
-                    .opacity(phase.shouldPulse ? (pulse ? 0.08 : 0.40) : 0.18)
-                    .rotationEffect(.degrees(phase.shouldSpinRing ? (spinRing ? 360 : 0) : 0))
-
-                Circle()
                     .fill(
                         RadialGradient(
                             colors: [
-                                phase.accentColor.opacity(0.96),
-                                phase.accentColor.opacity(0.70),
-                                Color.black.opacity(0.90),
+                                baseFillColor.opacity(0.98),
+                                baseFillColor.opacity(0.82),
+                                Color.black.opacity(0.92),
                             ],
                             center: .center,
                             startRadius: 10,
-                            endRadius: 140
+                            endRadius: 96
                         )
                     )
-                    .frame(width: 184, height: 184)
+                    .frame(width: 156, height: 156)
                     .overlay {
                         Circle()
-                            .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                            .stroke(Color.white.opacity(0.14), lineWidth: 1)
                     }
-                    .shadow(color: phase.accentColor.opacity(0.45), radius: 28, y: 12)
+                    .shadow(color: glowColor.opacity(glowOpacity), radius: 22, y: 8)
+                    .scaleEffect(phase.shouldPulse ? (pulse ? 1.03 : 0.97) : 1.0)
+
+                Circle()
+                    .trim(from: phase.outerRingTrimRange.lowerBound, to: phase.outerRingTrimRange.upperBound)
+                    .stroke(
+                        glowColor.opacity(ringOpacity),
+                        style: StrokeStyle(lineWidth: 10, lineCap: .round)
+                    )
+                    .frame(width: 172, height: 172)
+                    .rotationEffect(.degrees(phase.shouldSpinRing ? (spinRing ? 360 : 0) : 0))
 
                 symbolView
             }
-            .frame(width: 260, height: 260)
+            .frame(width: 184, height: 184)
         }
         .buttonStyle(.plain)
-        .disabled(!phase.isInteractive || !isEnabled)
-        .opacity(isEnabled ? 1.0 : 0.84)
-        .animation(.easeInOut(duration: 0.28), value: phase)
+        .disabled(!isEnabled)
+        .opacity(isEnabled ? 1.0 : 0.88)
+        .animation(.easeInOut(duration: 0.24), value: phase)
         .onAppear {
             updateAnimation(for: phase)
         }
@@ -61,17 +57,74 @@ struct CaptureCircleView: View {
         }
     }
 
+    private var baseFillColor: Color {
+        switch phase {
+        case .idle:
+            return Color(red: 0.72, green: 0.78, blue: 0.86)
+        case .recording:
+            return Color(red: 0.96, green: 0.18, blue: 0.22)
+        case .processing:
+            return Color(red: 0.92, green: 0.66, blue: 0.20)
+        case .success:
+            return Color(red: 0.24, green: 0.76, blue: 0.48)
+        case .error:
+            return Color(red: 0.91, green: 0.36, blue: 0.22)
+        }
+    }
+
+    private var glowColor: Color {
+        phase.accentColor
+    }
+
+    private var glowOpacity: Double {
+        switch phase {
+        case .recording:
+            return 0.48
+        case .processing:
+            return 0.34
+        case .success:
+            return 0.34
+        case .error:
+            return 0.36
+        case .idle:
+            return 0.18
+        }
+    }
+
+    private var ringOpacity: Double {
+        switch phase {
+        case .idle:
+            return 0.0
+        case .recording:
+            return 0.34
+        case .processing:
+            return 0.9
+        case .success:
+            return 0.4
+        case .error:
+            return 0.42
+        }
+    }
+
     @ViewBuilder
     private var symbolView: some View {
         switch phase {
         case .processing:
             ProgressView()
-                .controlSize(.large)
+                .controlSize(.regular)
                 .tint(.white)
-                .scaleEffect(1.25)
+                .scaleEffect(1.2)
+        case .success:
+            Image(systemName: "checkmark")
+                .font(.system(size: 34, weight: .bold, design: .rounded))
+                .foregroundStyle(.white)
+        case .error:
+            Image(systemName: "arrow.clockwise")
+                .font(.system(size: 34, weight: .bold, design: .rounded))
+                .foregroundStyle(.white)
         default:
-            Image(systemName: phase.symbolName)
-                .font(.system(size: 42, weight: .bold, design: .rounded))
+            Image(systemName: "mic.fill")
+                .font(.system(size: 38, weight: .bold, design: .rounded))
                 .foregroundStyle(.white)
         }
     }
@@ -88,7 +141,7 @@ struct CaptureCircleView: View {
 
         if phase.shouldSpinRing {
             spinRing = false
-            withAnimation(.linear(duration: 1.1).repeatForever(autoreverses: false)) {
+            withAnimation(.linear(duration: 1.0).repeatForever(autoreverses: false)) {
                 spinRing = true
             }
         } else {

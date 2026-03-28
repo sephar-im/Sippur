@@ -2,74 +2,72 @@ import SwiftUI
 
 struct MainCaptureView: View {
     @ObservedObject var model: AppModel
+    @ObservedObject var panelController: CapturePanelController
+    @State private var suppressTap = false
+
+    private var visiblePhase: CapturePhase {
+        if model.hasBlockingSetupFailure {
+            return .error
+        }
+
+        if model.isBootstrappingDependencies {
+            return .processing
+        }
+
+        return model.phase
+    }
+
+    private var isInteractive: Bool {
+        if model.hasBlockingSetupFailure {
+            return true
+        }
+
+        return model.isCaptureReady && visiblePhase.isInteractive
+    }
+
+    private var action: () -> Void {
+        if model.hasBlockingSetupFailure {
+            return model.retryDependencyBootstrap
+        }
+
+        return model.requestCaptureToggle
+    }
+
+    private var tapAction: () -> Void {
+        {
+            if suppressTap {
+                suppressTap = false
+                return
+            }
+
+            action()
+        }
+    }
 
     var body: some View {
         ZStack {
-            LinearGradient(
-                colors: [
-                    Color(red: 0.10, green: 0.13, blue: 0.16),
-                    Color(red: 0.14, green: 0.16, blue: 0.20),
-                    Color(red: 0.08, green: 0.10, blue: 0.13),
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
+            CaptureCircleView(
+                phase: visiblePhase,
+                isEnabled: isInteractive,
+                action: tapAction
             )
-            .ignoresSafeArea()
-
-            VStack(spacing: 26) {
-                Spacer()
-
-                CaptureCircleView(
-                    phase: model.phase,
-                    isEnabled: model.isCaptureReady,
-                    action: model.requestCaptureToggle
-                )
-
-                VStack(spacing: 8) {
-                    Text(model.phase.title)
-                        .font(.system(size: 28, weight: .semibold, design: .rounded))
-                        .foregroundStyle(.white)
-
-                    Text(model.statusText)
-                        .font(.system(size: 14, weight: .medium, design: .rounded))
-                        .foregroundStyle(Color.white.opacity(0.88))
-                        .multilineTextAlignment(.center)
-
-                    Text(model.detailText)
-                        .font(.system(size: 12, weight: .regular, design: .rounded))
-                        .foregroundStyle(Color.white.opacity(0.58))
-                        .multilineTextAlignment(.center)
-                        .textSelection(.enabled)
-                }
-                .frame(maxWidth: 280)
-
-                VStack(spacing: 10) {
-                    if model.isBootstrappingDependencies {
-                        ProgressView()
-                            .controlSize(.small)
-                            .tint(.white.opacity(0.86))
-                    } else if model.hasBlockingSetupFailure {
-                        Button("Retry Setup") {
-                            model.retryDependencyBootstrap()
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .tint(Color.white.opacity(0.18))
-                    }
-
-                    Text(
-                        model.isCaptureReady
-                        ? "Click the circle or press \(GlobalShortcutMonitor.defaultShortcutDisplayName). Press again to stop, transcribe locally, and save."
-                        : "Capture becomes available as soon as local transcription setup finishes."
-                    )
-                    .font(.system(size: 11, weight: .medium, design: .rounded))
-                    .foregroundStyle(Color.white.opacity(0.45))
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: 260)
-                }
-
-                Spacer()
-            }
-            .padding(32)
         }
+        .frame(width: 184, height: 184)
+        .background(Color.clear)
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 4)
+                .onChanged { value in
+                    suppressTap = true
+                    panelController.beginDragIfNeeded()
+                    panelController.updateDrag(translation: value.translation)
+                }
+                .onEnded { _ in
+                    panelController.endDrag()
+
+                    DispatchQueue.main.async {
+                        suppressTap = false
+                    }
+                }
+        )
     }
 }

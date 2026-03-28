@@ -2,10 +2,9 @@ import SwiftUI
 import AppKit
 
 struct MenuBarContentView: View {
-    @Environment(\.openWindow) private var openWindow
-
     @ObservedObject var model: AppModel
     @ObservedObject var settings: SettingsStore
+    let showCaptureWindow: () -> Void
 
     private var llmEnabledBinding: Binding<Bool> {
         Binding(
@@ -20,7 +19,7 @@ struct MenuBarContentView: View {
                 .font(.system(size: 15, weight: .semibold, design: .rounded))
 
             Button("Show Capture Window") {
-                openWindow(id: "capture")
+                showCaptureWindow()
             }
 
             Text("State: \(model.phase.title)")
