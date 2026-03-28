@@ -178,13 +178,49 @@ final class SepharimSippurTests: XCTestCase {
         XCTAssertFalse(draft.contents.hasPrefix("---\n"))
     }
 
+    func testSaveNoteAddsSuffixWhenTimestampedFileAlreadyExists() throws {
+        let folderURL = FileManager.default.temporaryDirectory
+            .appending(component: "SepharimSippurTests.\(UUID().uuidString)", directoryHint: .isDirectory)
+        let settings = ExportSettings(folderURL: folderURL, format: .txt, mode: .normal)
+        let exporter = NoteExporter()
+        let date = Date(timeIntervalSince1970: 0)
+
+        let firstURL = try exporter.saveNote(transcription: "First note", using: settings, date: date)
+        let secondURL = try exporter.saveNote(transcription: "Second note", using: settings, date: date)
+
+        XCTAssertTrue(firstURL.lastPathComponent.hasSuffix(".txt"))
+        XCTAssertTrue(secondURL.lastPathComponent.hasSuffix(" 01.txt"))
+        XCTAssertTrue(secondURL.lastPathComponent.hasPrefix(firstURL.deletingPathExtension().lastPathComponent))
+        XCTAssertEqual(try String(contentsOf: firstURL), "First note\n")
+        XCTAssertEqual(try String(contentsOf: secondURL), "Second note\n")
+    }
+
+    func testSaveNoteFailsWhenOutputFolderPathIsAFile() throws {
+        let tempDirectory = FileManager.default.temporaryDirectory
+            .appending(component: "SepharimSippurTests.\(UUID().uuidString)", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
+
+        let fileURL = tempDirectory.appending(component: "not-a-folder", directoryHint: .notDirectory)
+        try "content".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let settings = ExportSettings(folderURL: fileURL, format: .txt, mode: .normal)
+        let exporter = NoteExporter()
+
+        XCTAssertThrowsError(try exporter.saveNote(transcription: "Hello", using: settings, date: Date(timeIntervalSince1970: 0))) { error in
+            XCTAssertEqual(
+                error.localizedDescription,
+                "The selected output path is not a folder: \(fileURL.path)"
+            )
+        }
+    }
+
     @MainActor
     func testPrimaryActionStartsRecordingWhenPermissionIsGranted() async {
         let service = MockRecordingService()
         let suiteName = "SepharimSippurTests.\(UUID().uuidString)"
         let model = AppModel(settings: makeTestSettingsStore(suiteName: suiteName, reset: true), recordingService: service)
 
-        await model.performPrimaryAction()
+        await model.performCaptureToggle()
 
         XCTAssertEqual(model.phase, .recording)
         XCTAssertEqual(model.statusText, "Recording in progress.")
@@ -206,8 +242,8 @@ final class SepharimSippurTests: XCTestCase {
             noteExporter: exporter
         )
 
-        await model.performPrimaryAction()
-        await model.performPrimaryAction()
+        await model.performCaptureToggle()
+        await model.performCaptureToggle()
 
         XCTAssertEqual(model.phase, .success)
         XCTAssertEqual(model.statusText, "Saved test-note.md.")
@@ -230,7 +266,7 @@ final class SepharimSippurTests: XCTestCase {
         let suiteName = "SepharimSippurTests.\(UUID().uuidString)"
         let model = AppModel(settings: makeTestSettingsStore(suiteName: suiteName, reset: true), recordingService: service)
 
-        await model.performPrimaryAction()
+        await model.performCaptureToggle()
 
         XCTAssertEqual(model.phase, .error)
         XCTAssertTrue(model.statusText.contains("Microphone access was denied"))
@@ -245,8 +281,8 @@ final class SepharimSippurTests: XCTestCase {
         let suiteName = "SepharimSippurTests.\(UUID().uuidString)"
         let model = AppModel(settings: makeTestSettingsStore(suiteName: suiteName, reset: true), recordingService: service)
 
-        await model.performPrimaryAction()
-        await model.performPrimaryAction()
+        await model.performCaptureToggle()
+        await model.performCaptureToggle()
 
         XCTAssertEqual(model.phase, .error)
         XCTAssertEqual(model.statusText, "Test failure")
@@ -267,8 +303,8 @@ final class SepharimSippurTests: XCTestCase {
             transcriptionService: transcriptionService
         )
 
-        await model.performPrimaryAction()
-        await model.performPrimaryAction()
+        await model.performCaptureToggle()
+        await model.performCaptureToggle()
 
         XCTAssertEqual(model.phase, .error)
         XCTAssertEqual(model.statusText, "Test failure")
@@ -292,11 +328,11 @@ final class SepharimSippurTests: XCTestCase {
             noteExporter: exporter
         )
 
-        await model.performPrimaryAction()
+        await model.performCaptureToggle()
 
-        let firstStop = Task { await model.performPrimaryAction() }
+        let firstStop = Task { await model.performCaptureToggle() }
         await Task.yield()
-        let secondStop = Task { await model.performPrimaryAction() }
+        let secondStop = Task { await model.performCaptureToggle() }
 
         await firstStop.value
         await secondStop.value
@@ -316,7 +352,7 @@ final class SepharimSippurTests: XCTestCase {
         let suiteName = "SepharimSippurTests.\(UUID().uuidString)"
         let model = AppModel(settings: makeTestSettingsStore(suiteName: suiteName, reset: true), recordingService: service)
 
-        await model.performPrimaryAction()
+        await model.performCaptureToggle()
 
         XCTAssertEqual(model.phase, .error)
         XCTAssertEqual(model.statusText, "A recording is already in progress.")

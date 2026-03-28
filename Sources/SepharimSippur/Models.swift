@@ -60,6 +60,19 @@ enum CapturePhase: Equatable {
     var shouldPulse: Bool {
         self == .recording
     }
+
+    var shouldSpinRing: Bool {
+        self == .processing
+    }
+
+    var outerRingTrimRange: ClosedRange<Double> {
+        switch self {
+        case .processing:
+            return 0.16...0.88
+        default:
+            return 0.0...1.0
+        }
+    }
 }
 
 enum OutputFormat: String, CaseIterable, Identifiable {
@@ -70,10 +83,6 @@ enum OutputFormat: String, CaseIterable, Identifiable {
 
     var label: String {
         rawValue.uppercased()
-    }
-
-    var fileExtension: String {
-        rawValue
     }
 }
 

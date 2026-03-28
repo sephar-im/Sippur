@@ -5,15 +5,24 @@ struct CaptureCircleView: View {
     let action: () -> Void
 
     @State private var pulse = false
+    @State private var spinRing = false
 
     var body: some View {
         Button(action: action) {
             ZStack {
                 Circle()
-                    .stroke(phase.accentColor.opacity(0.28), lineWidth: 22)
+                    .trim(
+                        from: phase.outerRingTrimRange.lowerBound,
+                        to: phase.outerRingTrimRange.upperBound
+                    )
+                    .stroke(
+                        phase.accentColor.opacity(0.28),
+                        style: StrokeStyle(lineWidth: 22, lineCap: .round)
+                    )
                     .frame(width: 240, height: 240)
                     .scaleEffect(phase.shouldPulse ? (pulse ? 1.10 : 0.90) : 1.0)
                     .opacity(phase.shouldPulse ? (pulse ? 0.08 : 0.40) : 0.18)
+                    .rotationEffect(.degrees(phase.shouldSpinRing ? (spinRing ? 360 : 0) : 0))
 
                 Circle()
                     .fill(
@@ -73,6 +82,15 @@ struct CaptureCircleView: View {
             }
         } else {
             pulse = false
+        }
+
+        if phase.shouldSpinRing {
+            spinRing = false
+            withAnimation(.linear(duration: 1.1).repeatForever(autoreverses: false)) {
+                spinRing = true
+            }
+        } else {
+            spinRing = false
         }
     }
 }

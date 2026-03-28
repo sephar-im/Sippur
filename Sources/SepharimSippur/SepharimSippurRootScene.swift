@@ -10,7 +10,7 @@ public struct SepharimSippurRootScene: Scene {
         let settings = SettingsStore()
         let model = AppModel(settings: settings)
         let shortcutMonitor = GlobalShortcutMonitor {
-            model.handlePrimaryAction()
+            model.requestCaptureToggle()
         }
 
         _settings = StateObject(wrappedValue: settings)

@@ -5,6 +5,20 @@ protocol NoteExporting {
 }
 
 struct NoteExporter: NoteExporting {
+    enum NoteExportError: LocalizedError {
+        case outputFolderIsFile(URL)
+        case couldNotAllocateUniqueFileName(URL)
+
+        var errorDescription: String? {
+            switch self {
+            case .outputFolderIsFile(let folderURL):
+                return "The selected output path is not a folder: \(folderURL.path)"
+            case .couldNotAllocateUniqueFileName(let fileURL):
+                return "A unique note filename could not be created in \(fileURL.deletingLastPathComponent().path)."
+            }
+        }
+    }
+
     private let fileManager: FileManager
 
     init(fileManager: FileManager = .default) {
@@ -13,13 +27,8 @@ struct NoteExporter: NoteExporting {
 
     func saveNote(transcription: String, using settings: ExportSettings, date: Date = .now) throws -> URL {
         let draft = buildNoteDraft(transcription: transcription, using: settings, date: date)
-
-        try fileManager.createDirectory(
-            at: settings.folderURL,
-            withIntermediateDirectories: true
-        )
-
-        let fileURL = settings.folderURL.appending(component: draft.fileName, directoryHint: .notDirectory)
+        let outputFolderURL = try prepareOutputFolder(at: settings.folderURL)
+        let fileURL = try resolvedOutputURL(for: draft, in: outputFolderURL)
         try draft.contents.write(to: fileURL, atomically: true, encoding: .utf8)
         return fileURL
     }
@@ -78,6 +87,45 @@ struct NoteExporter: NoteExporting {
             \(transcription)
             """
         }
+    }
+
+    private func prepareOutputFolder(at folderURL: URL) throws -> URL {
+        var isDirectory: ObjCBool = false
+        let fileExists = fileManager.fileExists(atPath: folderURL.path, isDirectory: &isDirectory)
+
+        if fileExists {
+            guard isDirectory.boolValue else {
+                throw NoteExportError.outputFolderIsFile(folderURL)
+            }
+        } else {
+            try fileManager.createDirectory(
+                at: folderURL,
+                withIntermediateDirectories: true
+            )
+        }
+
+        return folderURL
+    }
+
+    private func resolvedOutputURL(for draft: NoteDraft, in folderURL: URL) throws -> URL {
+        let baseURL = folderURL.appending(component: draft.fileName, directoryHint: .notDirectory)
+        guard fileManager.fileExists(atPath: baseURL.path) else {
+            return baseURL
+        }
+
+        let fileExtension = baseURL.pathExtension
+        let baseName = baseURL.deletingPathExtension().lastPathComponent
+
+        for suffix in 1...999 {
+            let candidateName = "\(baseName) \(String(format: "%02d", suffix)).\(fileExtension)"
+            let candidateURL = folderURL.appending(component: candidateName, directoryHint: .notDirectory)
+
+            if !fileManager.fileExists(atPath: candidateURL.path) {
+                return candidateURL
+            }
+        }
+
+        throw NoteExportError.couldNotAllocateUniqueFileName(baseURL)
     }
 
     private func formatted(

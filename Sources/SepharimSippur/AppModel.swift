@@ -3,6 +3,9 @@ import AppKit
 
 @MainActor
 final class AppModel: ObservableObject {
+    private let idleStatusText = "Click the circle or press \(GlobalShortcutMonitor.defaultShortcutDisplayName) to start recording."
+    private let recoverableErrorDetailText = "The app stayed stable. Click the circle or press \(GlobalShortcutMonitor.defaultShortcutDisplayName) to try recording again."
+
     @Published private(set) var phase: CapturePhase = .idle
     @Published private(set) var statusText: String
     @Published private(set) var detailText = "Recording will be transcribed locally and saved automatically when it stops."
@@ -21,14 +24,14 @@ final class AppModel: ObservableObject {
         transcriptionService: TranscriptionServicing = WhisperTranscriptionService(),
         noteExporter: NoteExporting = NoteExporter()
     ) {
-        self.statusText = "Click the circle or press \(GlobalShortcutMonitor.defaultShortcutDisplayName) to start recording."
+        self.statusText = idleStatusText
         self.settings = settings
         self.recordingService = recordingService
         self.transcriptionService = transcriptionService
         self.noteExporter = noteExporter
         self.recordingService.unexpectedFailureHandler = { [weak self] error in
             self?.lastRecordingURL = nil
-            self?.presentError(error.localizedDescription)
+            self?.transitionToError(error.localizedDescription)
         }
     }
 
@@ -47,9 +50,9 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func handlePrimaryAction() {
+    func requestCaptureToggle() {
         Task {
-            await performPrimaryAction()
+            await performCaptureToggle()
         }
     }
 
@@ -63,7 +66,7 @@ final class AppModel: ObservableObject {
         NSWorkspace.shared.activateFileViewerSelecting([lastSavedNoteURL])
     }
 
-    func performPrimaryAction() async {
+    func performCaptureToggle() async {
         guard !isPerformingPrimaryAction else { return }
         isPerformingPrimaryAction = true
         defer { isPerformingPrimaryAction = false }
@@ -79,24 +82,20 @@ final class AppModel: ObservableObject {
     }
 
     private func startRecording() async {
-        if phase == .success {
-            lastRecordingURL = nil
-            lastSavedNoteURL = nil
-        }
-
         let permissionGranted = await recordingService.requestPermission()
         guard permissionGranted else {
-            presentError("Microphone access was denied. Allow it in System Settings > Privacy & Security > Microphone.")
+            transitionToError("Microphone access was denied. Allow it in System Settings > Privacy & Security > Microphone.")
             return
         }
 
         do {
             let recordingURL = try recordingService.startRecording()
+            clearSessionArtifacts()
             phase = .recording
             statusText = "Recording in progress."
             detailText = "Temporary file: \(recordingURL.lastPathComponent)"
         } catch {
-            presentError(error.localizedDescription)
+            transitionToError(error.localizedDescription)
         }
     }
 
@@ -128,13 +127,18 @@ final class AppModel: ObservableObject {
             statusText = "Saved \(noteURL.lastPathComponent)."
             detailText = noteURL.path
         } catch {
-            presentError(error.localizedDescription)
+            transitionToError(error.localizedDescription)
         }
     }
 
-    private func presentError(_ message: String) {
+    private func clearSessionArtifacts() {
+        lastRecordingURL = nil
+        lastSavedNoteURL = nil
+    }
+
+    private func transitionToError(_ message: String) {
         phase = .error
         statusText = message
-        detailText = "The app stayed stable. Click the circle or press \(GlobalShortcutMonitor.defaultShortcutDisplayName) to try recording again."
+        detailText = recoverableErrorDetailText
     }
 }

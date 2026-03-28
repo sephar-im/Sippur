@@ -21,7 +21,7 @@ struct MainCaptureView: View {
 
                 CaptureCircleView(
                     phase: model.phase,
-                    action: model.handlePrimaryAction
+                    action: model.requestCaptureToggle
                 )
 
                 VStack(spacing: 8) {
