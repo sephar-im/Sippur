@@ -42,7 +42,7 @@ struct MainCaptureView: View {
                 }
                 .frame(maxWidth: 280)
 
-                Text("Click once to record. Click again to stop, transcribe locally, and save the note.")
+                Text("Click the circle or press \(GlobalShortcutMonitor.defaultShortcutDisplayName). Press again to stop, transcribe locally, and save.")
                     .font(.system(size: 11, weight: .medium, design: .rounded))
                     .foregroundStyle(Color.white.opacity(0.45))
                     .multilineTextAlignment(.center)

@@ -4,7 +4,7 @@ import AppKit
 @MainActor
 final class AppModel: ObservableObject {
     @Published private(set) var phase: CapturePhase = .idle
-    @Published private(set) var statusText = "Click the circle to start recording."
+    @Published private(set) var statusText: String
     @Published private(set) var detailText = "Recording will be transcribed locally and saved automatically when it stops."
     @Published private(set) var lastRecordingURL: URL?
     @Published private(set) var lastSavedNoteURL: URL?
@@ -21,6 +21,7 @@ final class AppModel: ObservableObject {
         transcriptionService: TranscriptionServicing = WhisperTranscriptionService(),
         noteExporter: NoteExporting = NoteExporter()
     ) {
+        self.statusText = "Click the circle or press \(GlobalShortcutMonitor.defaultShortcutDisplayName) to start recording."
         self.settings = settings
         self.recordingService = recordingService
         self.transcriptionService = transcriptionService
@@ -134,6 +135,6 @@ final class AppModel: ObservableObject {
     private func presentError(_ message: String) {
         phase = .error
         statusText = message
-        detailText = "The app stayed stable. Click the circle to try recording again."
+        detailText = "The app stayed stable. Click the circle or press \(GlobalShortcutMonitor.defaultShortcutDisplayName) to try recording again."
     }
 }

@@ -1,13 +1,25 @@
 import SwiftUI
+import Foundation
 
 public struct SepharimSippurRootScene: Scene {
     @StateObject private var settings: SettingsStore
     @StateObject private var model: AppModel
+    private let shortcutMonitor: GlobalShortcutMonitor
 
     public init() {
         let settings = SettingsStore()
+        let model = AppModel(settings: settings)
+        let shortcutMonitor = GlobalShortcutMonitor {
+            model.handlePrimaryAction()
+        }
+
         _settings = StateObject(wrappedValue: settings)
-        _model = StateObject(wrappedValue: AppModel(settings: settings))
+        _model = StateObject(wrappedValue: model)
+        self.shortcutMonitor = shortcutMonitor
+
+        DispatchQueue.main.async {
+            shortcutMonitor.startIfNeeded()
+        }
     }
 
     public var body: some Scene {

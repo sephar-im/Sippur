@@ -26,6 +26,7 @@ private final class MockRecordingService: RecordingServicing {
     var permissionGranted = true
     var startResult: Result<URL, Error> = .success(URL(fileURLWithPath: "/tmp/test-recording.wav"))
     var stopResult: Result<URL, Error> = .success(URL(fileURLWithPath: "/tmp/test-recording.wav"))
+    var stopDelayNanoseconds: UInt64 = 0
     var startCalls = 0
     var stopCalls = 0
 
@@ -40,6 +41,11 @@ private final class MockRecordingService: RecordingServicing {
 
     func stopRecording() async throws -> URL {
         stopCalls += 1
+
+        if stopDelayNanoseconds > 0 {
+            try? await Task.sleep(nanoseconds: stopDelayNanoseconds)
+        }
+
         return try stopResult.get()
     }
 }
@@ -82,7 +88,7 @@ final class SepharimSippurTests: XCTestCase {
         let model = AppModel(settings: makeTestSettingsStore(suiteName: suiteName, reset: true), recordingService: MockRecordingService())
 
         XCTAssertEqual(model.phase, .idle)
-        XCTAssertEqual(model.statusText, "Click the circle to start recording.")
+        XCTAssertEqual(model.statusText, "Click the circle or press Command-Shift-R to start recording.")
     }
 
     @MainActor
@@ -245,6 +251,37 @@ final class SepharimSippurTests: XCTestCase {
         XCTAssertEqual(service.startCalls, 1)
         XCTAssertEqual(service.stopCalls, 1)
         XCTAssertEqual(transcriptionService.transcribeCalls, 1)
+    }
+
+    @MainActor
+    func testRepeatedStopToggleDoesNotDoubleTransition() async {
+        let service = MockRecordingService()
+        service.stopDelayNanoseconds = 50_000_000
+
+        let transcriptionService = MockTranscriptionService()
+        let exporter = MockNoteExporter()
+        let suiteName = "SepharimSippurTests.\(UUID().uuidString)"
+        let model = AppModel(
+            settings: makeTestSettingsStore(suiteName: suiteName, reset: true),
+            recordingService: service,
+            transcriptionService: transcriptionService,
+            noteExporter: exporter
+        )
+
+        await model.performPrimaryAction()
+
+        let firstStop = Task { await model.performPrimaryAction() }
+        await Task.yield()
+        let secondStop = Task { await model.performPrimaryAction() }
+
+        await firstStop.value
+        await secondStop.value
+
+        XCTAssertEqual(service.startCalls, 1)
+        XCTAssertEqual(service.stopCalls, 1)
+        XCTAssertEqual(transcriptionService.transcribeCalls, 1)
+        XCTAssertEqual(exporter.saveCalls, 1)
+        XCTAssertEqual(model.phase, .success)
     }
 
     @MainActor

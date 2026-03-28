@@ -20,6 +20,10 @@ struct MenuBarContentView: View {
                 .font(.system(size: 12, weight: .medium, design: .rounded))
                 .foregroundStyle(.secondary)
 
+            Text("Shortcut: \(GlobalShortcutMonitor.defaultShortcutDisplayName)")
+                .font(.system(size: 12, weight: .medium, design: .rounded))
+                .foregroundStyle(.secondary)
+
             Divider()
 
             VStack(alignment: .leading, spacing: 6) {
