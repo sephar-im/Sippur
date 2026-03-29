@@ -35,7 +35,7 @@ public struct SepharimSippurRootScene: Scene {
     }
 
     public var body: some Scene {
-        MenuBarExtra("Sepharim Sippur", systemImage: model.menuBarSymbolName) {
+        MenuBarExtra {
             MenuBarContentView(
                 model: model,
                 settings: settings,
@@ -44,14 +44,28 @@ public struct SepharimSippurRootScene: Scene {
                     shortcutMonitor.updateShortcut(shortcut)
                 }
             )
+        } label: {
+            MenuBarIconView()
         }
         .menuBarExtraStyle(.window)
-        .commands {
-            CommandGroup(replacing: .appSettings) {}
-        }
 
         Settings {
-            EmptyView()
+            SettingsWindowView(
+                model: model,
+                settings: settings,
+                setGlobalShortcut: { shortcut in
+                    settings.setGlobalShortcut(shortcut)
+                    shortcutMonitor.updateShortcut(shortcut)
+                }
+            )
         }
+        .commands {
+            SepharimSippurCommands()
+        }
+
+        Window("About Sepharim Sippur", id: "about") {
+            AboutView()
+        }
+        .windowResizability(.contentSize)
     }
 }

@@ -11,7 +11,10 @@ BUILD_NUMBER="${BUILD_NUMBER:-$VERSION}"
 MINIMUM_SYSTEM_VERSION="${MINIMUM_SYSTEM_VERSION:-14.0}"
 APP_CATEGORY="${APP_CATEGORY:-public.app-category.productivity}"
 ICON_SOURCE="${ICON_SOURCE:-$ROOT_DIR/sippur.png}"
-MICROPHONE_USAGE_DESCRIPTION="${MICROPHONE_USAGE_DESCRIPTION:-Sepharim Sippur records your voice so it can transcribe and save local notes.}"
+MENU_BAR_ICON_LIGHT_SOURCE="${MENU_BAR_ICON_LIGHT_SOURCE:-$ROOT_DIR/sippur_bar_lightmode.svg}"
+MENU_BAR_ICON_DARK_SOURCE="${MENU_BAR_ICON_DARK_SOURCE:-$ROOT_DIR/sippur_bar_darkmode.svg}"
+MICROPHONE_USAGE_DESCRIPTION="${MICROPHONE_USAGE_DESCRIPTION:-Sepharim Sippur needs microphone access to turn your speech into local text notes.}"
+HUMAN_READABLE_COPYRIGHT="${HUMAN_READABLE_COPYRIGHT:-Copyright © 2026 Sepharim Sippur. All rights reserved.}"
 OUTPUT_DIR="${OUTPUT_DIR:-$ROOT_DIR/dist}"
 SIGNING_IDENTITY="${SIGNING_IDENTITY:--}"
 REQUIRE_DEVELOPER_ID="${REQUIRE_DEVELOPER_ID:-0}"
@@ -37,6 +40,16 @@ if [[ ! -f "$ICON_SOURCE" ]]; then
   exit 1
 fi
 
+if [[ ! -f "$MENU_BAR_ICON_LIGHT_SOURCE" ]]; then
+  echo "Menu bar light icon source not found at $MENU_BAR_ICON_LIGHT_SOURCE" >&2
+  exit 1
+fi
+
+if [[ ! -f "$MENU_BAR_ICON_DARK_SOURCE" ]]; then
+  echo "Menu bar dark icon source not found at $MENU_BAR_ICON_DARK_SOURCE" >&2
+  exit 1
+fi
+
 for tool in swift sips iconutil codesign plutil; do
   if ! command -v "$tool" >/dev/null 2>&1; then
     echo "Required tool '$tool' is not available." >&2
@@ -59,6 +72,8 @@ mkdir -p "$APP_MACOS" "$APP_RESOURCES" "$ICONSET_DIR"
 
 cp "$EXECUTABLE_SOURCE" "$APP_MACOS/$EXECUTABLE_NAME"
 chmod +x "$APP_MACOS/$EXECUTABLE_NAME"
+cp "$MENU_BAR_ICON_LIGHT_SOURCE" "$APP_RESOURCES/sippur_bar_lightmode.svg"
+cp "$MENU_BAR_ICON_DARK_SOURCE" "$APP_RESOURCES/sippur_bar_darkmode.svg"
 xattr -cr "$APP_BUNDLE" 2>/dev/null || true
 
 echo "Generating app icon..."
@@ -99,8 +114,10 @@ cat >"$APP_INFO_PLIST" <<EOF
     <string>$MINIMUM_SYSTEM_VERSION</string>
     <key>NSHighResolutionCapable</key>
     <true/>
+    <key>NSHumanReadableCopyright</key>
+    <string>$HUMAN_READABLE_COPYRIGHT</string>
     <key>NSMicrophoneUsageDescription</key>
-    <string>$MICROPHONE_USAGE_DESCRIPTION</string>
+    <string>${MICROPHONE_USAGE_DESCRIPTION:-Sepharim Sippur needs microphone access to turn your speech into local text notes.}</string>
 </dict>
 </plist>
 EOF

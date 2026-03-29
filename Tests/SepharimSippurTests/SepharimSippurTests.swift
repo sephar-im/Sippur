@@ -78,12 +78,20 @@ private final class MockTranscriptionService: TranscriptionServicing {
 
 @MainActor
 private final class MockLLMPostProcessingService: LLMPostProcessingServicing {
+    var ollamaInstalled = true
     var prepareCalls = 0
+    var removeCalls = 0
     var postProcessCalls = 0
     var preparedModel: LocalLLMModel = .qwen25_05b
+    var removedModel: LocalLLMModel?
+    var removeResult: Result<Void, Error> = .success(())
     var postProcessResult: Result<NoteContent, Error> = .success(
         NoteContent(body: "Cleaned transcription", title: "Cleaned Title")
     )
+
+    func isOllamaInstalled() async -> Bool {
+        ollamaInstalled
+    }
 
     func prepare(
         settings: LLMPostProcessingSettings,
@@ -91,7 +99,19 @@ private final class MockLLMPostProcessingService: LLMPostProcessingServicing {
     ) async throws -> LocalLLMModel {
         prepareCalls += 1
         progress("LLM ready.", nil)
-        return preparedModel
+        return settings.preferredModel ?? preparedModel
+    }
+
+    func removeModel(
+        settings: LLMPostProcessingSettings,
+        progress: @escaping @MainActor (String, String?) -> Void
+    ) async throws -> LocalLLMModel {
+        removeCalls += 1
+        let model = settings.preferredModel ?? preparedModel
+        removedModel = model
+        progress("Downloaded LLM removed.", nil)
+        try removeResult.get()
+        return model
     }
 
     func postProcess(
@@ -120,6 +140,15 @@ private final class MockNoteExporter: NoteExporting {
     }
 }
 
+@MainActor
+private final class MockClipboardWriter: ClipboardWriting {
+    private(set) var writes: [String] = []
+
+    func write(_ text: String) {
+        writes.append(text)
+    }
+}
+
 final class SepharimSippurTests: XCTestCase {
     @MainActor
     func testAppModelStartsIdle() {
@@ -127,7 +156,7 @@ final class SepharimSippurTests: XCTestCase {
         let model = AppModel(settings: makeTestSettingsStore(suiteName: suiteName, reset: true), recordingService: MockRecordingService())
 
         XCTAssertEqual(model.phase, .idle)
-        XCTAssertEqual(model.statusText, "Click the circle to start recording.")
+        XCTAssertEqual(model.statusText, "Click the circle to capture a note.")
     }
 
     @MainActor
@@ -163,6 +192,28 @@ final class SepharimSippurTests: XCTestCase {
         let reloadedStore = makeTestSettingsStore(suiteName: suiteName)
         XCTAssertEqual(reloadedStore.globalShortcut, shortcut)
         XCTAssertEqual(reloadedStore.globalShortcutDisplayName, "Command-Option-K")
+    }
+
+    @MainActor
+    func testSettingsPersistPreferredLLMModel() {
+        let suiteName = "SepharimSippurTests.preferred-llm.\(UUID().uuidString)"
+        let store = makeTestSettingsStore(suiteName: suiteName, reset: true)
+
+        store.preferredLLMModel = .qwen25_15b
+
+        let reloadedStore = makeTestSettingsStore(suiteName: suiteName)
+        XCTAssertEqual(reloadedStore.preferredLLMModel, .qwen25_15b)
+    }
+
+    @MainActor
+    func testSettingsPersistClipboardOption() {
+        let suiteName = "SepharimSippurTests.clipboard.\(UUID().uuidString)"
+        let store = makeTestSettingsStore(suiteName: suiteName, reset: true)
+
+        store.copySavedNoteToClipboard = true
+
+        let reloadedStore = makeTestSettingsStore(suiteName: suiteName)
+        XCTAssertTrue(reloadedStore.copySavedNoteToClipboard)
     }
 
     func testTxtDraftUsesSortableFilenameAndPlainTextBody() {
@@ -300,7 +351,7 @@ final class SepharimSippurTests: XCTestCase {
         XCTAssertTrue(model.isCaptureReady)
         XCTAssertFalse(model.hasBlockingSetupFailure)
         XCTAssertEqual(model.phase, .idle)
-        XCTAssertEqual(model.statusText, "Click the circle to start recording.")
+        XCTAssertEqual(model.statusText, "Click the circle to capture a note.")
     }
 
     @MainActor
@@ -352,7 +403,60 @@ final class SepharimSippurTests: XCTestCase {
 
         XCTAssertEqual(transcriptionService.prepareCalls, 1)
         XCTAssertEqual(llmService.prepareCalls, 1)
-        XCTAssertEqual(model.llmStatusText, "LLM ready.")
+        XCTAssertEqual(model.llmStatusText, "LLM ready (Qwen 0.5B).")
+    }
+
+    @MainActor
+    func testSelectingPreferredLLMModelTriggersPreparationWhenEnabled() async {
+        let transcriptionService = MockTranscriptionService()
+        let llmService = MockLLMPostProcessingService()
+        llmService.preparedModel = .qwen25_05b
+        let suiteName = "SepharimSippurTests.preferred-model.\(UUID().uuidString)"
+        let settings = makeTestSettingsStore(suiteName: suiteName, reset: true)
+        settings.isLLMPostProcessingEnabled = true
+
+        let model = AppModel(
+            settings: settings,
+            recordingService: MockRecordingService(),
+            transcriptionService: transcriptionService,
+            llmPostProcessingService: llmService
+        )
+
+        await model.bootstrapDependenciesOnLaunch()
+        model.setPreferredLLMModel(.qwen25_15b)
+        try? await Task.sleep(nanoseconds: 50_000_000)
+
+        XCTAssertEqual(settings.preferredLLMModel, .qwen25_15b)
+        XCTAssertEqual(model.preparedLLMModel, .qwen25_15b)
+        XCTAssertEqual(model.llmStatusText, "LLM ready (Qwen 1.5B).")
+    }
+
+    @MainActor
+    func testRemoveDownloadedLLMUsesSelectedModel() async {
+        let transcriptionService = MockTranscriptionService()
+        let llmService = MockLLMPostProcessingService()
+        let suiteName = "SepharimSippurTests.remove-llm.\(UUID().uuidString)"
+        let settings = makeTestSettingsStore(suiteName: suiteName, reset: true)
+        settings.isLLMPostProcessingEnabled = true
+        settings.preferredLLMModel = .qwen25_15b
+
+        let model = AppModel(
+            settings: settings,
+            recordingService: MockRecordingService(),
+            transcriptionService: transcriptionService,
+            llmPostProcessingService: llmService
+        )
+
+        await model.bootstrapDependenciesOnLaunch()
+        model.removeDownloadedLLM()
+        try? await Task.sleep(nanoseconds: 50_000_000)
+
+        XCTAssertEqual(llmService.removeCalls, 1)
+        XCTAssertEqual(llmService.removedModel, .qwen25_15b)
+        XCTAssertNil(model.preparedLLMModel)
+        XCTAssertNil(settings.preferredLLMModel)
+        XCTAssertFalse(settings.isLLMPostProcessingEnabled)
+        XCTAssertEqual(model.llmStatusText, "Removed Qwen 1.5B. LLM cleanup is disabled.")
     }
 
     @MainActor
@@ -371,7 +475,7 @@ final class SepharimSippurTests: XCTestCase {
         await model.performCaptureToggle()
 
         XCTAssertEqual(model.phase, .recording)
-        XCTAssertEqual(model.statusText, "Recording in progress.")
+        XCTAssertEqual(model.statusText, "Listening.")
         XCTAssertEqual(service.startCalls, 1)
         XCTAssertEqual(service.stopCalls, 0)
     }
@@ -381,13 +485,16 @@ final class SepharimSippurTests: XCTestCase {
         let service = MockRecordingService()
         let transcriptionService = MockTranscriptionService()
         let exporter = MockNoteExporter()
+        let clipboardWriter = MockClipboardWriter()
         let suiteName = "SepharimSippurTests.\(UUID().uuidString)"
         let settings = makeTestSettingsStore(suiteName: suiteName, reset: true)
+        settings.copySavedNoteToClipboard = true
         let model = AppModel(
             settings: settings,
             recordingService: service,
             transcriptionService: transcriptionService,
-            noteExporter: exporter
+            noteExporter: exporter,
+            clipboardWriter: clipboardWriter
         )
 
         await model.bootstrapDependenciesOnLaunch()
@@ -395,8 +502,7 @@ final class SepharimSippurTests: XCTestCase {
         await model.performCaptureToggle()
 
         XCTAssertEqual(model.phase, .success)
-        XCTAssertEqual(model.statusText, "Saved test-note.md.")
-        XCTAssertEqual(model.lastRecordingURL?.path, "/tmp/test-recording.wav")
+        XCTAssertEqual(model.statusText, "Saved test-note.md and copied the text.")
         XCTAssertEqual(model.lastSavedNoteURL?.path, "/tmp/test-note.md")
         XCTAssertEqual(service.startCalls, 1)
         XCTAssertEqual(service.stopCalls, 1)
@@ -405,6 +511,7 @@ final class SepharimSippurTests: XCTestCase {
         XCTAssertEqual(exporter.saveCalls, 1)
         XCTAssertEqual(exporter.lastContent, .whisperOnly(body: "Transcribed words"))
         XCTAssertEqual(exporter.lastSettings, settings.exportSettings)
+        XCTAssertEqual(clipboardWriter.writes, ["Transcribed words"])
     }
 
     @MainActor
@@ -416,7 +523,6 @@ final class SepharimSippurTests: XCTestCase {
         let suiteName = "SepharimSippurTests.\(UUID().uuidString)"
         let settings = makeTestSettingsStore(suiteName: suiteName, reset: true)
         settings.isLLMPostProcessingEnabled = true
-        settings.llmGeneratesTitle = true
 
         let model = AppModel(
             settings: settings,
@@ -457,7 +563,7 @@ final class SepharimSippurTests: XCTestCase {
         try? await Task.sleep(nanoseconds: 1_400_000_000)
 
         XCTAssertEqual(model.phase, .idle)
-        XCTAssertEqual(model.statusText, "Click the circle to start recording.")
+        XCTAssertEqual(model.statusText, "Click the circle to capture a note.")
     }
 
     @MainActor

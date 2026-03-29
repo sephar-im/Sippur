@@ -108,9 +108,19 @@ struct ExportSettings: Equatable {
     let mode: OutputMode
 }
 
-enum LocalLLMModel: String, Equatable {
-    case qwen25_05b = "qwen2.5:0.5b"
+enum LocalLLMModel: String, Equatable, Hashable, Identifiable {
     case qwen25_15b = "qwen2.5:1.5b"
+
+    var id: String { rawValue }
+
+    static let cleanupModel: LocalLLMModel = .qwen25_15b
+
+    var label: String {
+        switch self {
+        case .qwen25_15b:
+            return "Qwen 1.5B"
+        }
+    }
 }
 
 struct LLMPostProcessingSettings: Equatable {

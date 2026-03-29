@@ -12,6 +12,13 @@ struct OllamaModelSelector {
 
         return .qwen25_15b
     }
+
+    static func selectedModel(
+        preferredModel: LocalLLMModel?,
+        availableMemoryBytes: UInt64
+    ) -> LocalLLMModel {
+        preferredModel ?? recommendedModel(availableMemoryBytes: availableMemoryBytes)
+    }
 }
 
 struct SystemMemorySnapshot {
@@ -52,7 +59,14 @@ struct SystemMemorySnapshot {
 
 @MainActor
 protocol LLMPostProcessingServicing {
+    func isOllamaInstalled() async -> Bool
+
     func prepare(
+        settings: LLMPostProcessingSettings,
+        progress: @escaping @MainActor (String, String?) -> Void
+    ) async throws -> LocalLLMModel
+
+    func removeModel(
         settings: LLMPostProcessingSettings,
         progress: @escaping @MainActor (String, String?) -> Void
     ) async throws -> LocalLLMModel
@@ -146,11 +160,16 @@ final class OllamaPostProcessingService: LLMPostProcessingServicing {
         self.apiBaseURL = apiBaseURL
     }
 
+    func isOllamaInstalled() async -> Bool {
+        (try? locateInstallation()) != nil
+    }
+
     func prepare(
         settings: LLMPostProcessingSettings,
         progress: @escaping @MainActor (String, String?) -> Void
     ) async throws -> LocalLLMModel {
-        let selectedModel = OllamaModelSelector.recommendedModel(
+        let selectedModel = OllamaModelSelector.selectedModel(
+            preferredModel: settings.preferredModel,
             availableMemoryBytes: SystemMemorySnapshot.current().availableMemoryBytes
         )
 
@@ -171,6 +190,39 @@ final class OllamaPostProcessingService: LLMPostProcessingServicing {
 
         preparedModel = selectedModel
         progress("LLM ready.", nil)
+        return selectedModel
+    }
+
+    func removeModel(
+        settings: LLMPostProcessingSettings,
+        progress: @escaping @MainActor (String, String?) -> Void
+    ) async throws -> LocalLLMModel {
+        let selectedModel = OllamaModelSelector.selectedModel(
+            preferredModel: settings.preferredModel,
+            availableMemoryBytes: SystemMemorySnapshot.current().availableMemoryBytes
+        )
+
+        progress("Checking Ollama.", nil)
+        let installation = try locateInstallation()
+        try await ensureOllamaIsReachable(using: installation, progress: progress)
+
+        guard try await isModelAvailable(selectedModel) else {
+            if preparedModel == selectedModel {
+                preparedModel = nil
+            }
+            progress("No downloaded LLM to remove.", nil)
+            return selectedModel
+        }
+
+        progress("Removing downloaded LLM.", selectedModel.rawValue)
+        try await runOllamaCommand(
+            executableURL: installation.executableURL,
+            arguments: ["rm", selectedModel.rawValue]
+        )
+        if preparedModel == selectedModel {
+            preparedModel = nil
+        }
+        progress("Downloaded LLM removed.", nil)
         return selectedModel
     }
 
@@ -448,5 +500,40 @@ final class OllamaPostProcessingService: LLMPostProcessingServicing {
         }
 
         return nil
+    }
+
+    private func runOllamaCommand(executableURL: URL, arguments: [String]) async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            let process = Process()
+            let outputPipe = Pipe()
+
+            process.executableURL = executableURL
+            process.arguments = arguments
+            process.standardOutput = outputPipe
+            process.standardError = outputPipe
+
+            process.terminationHandler = { process in
+                let data = outputPipe.fileHandleForReading.readDataToEndOfFile()
+                let output = String(decoding: data, as: UTF8.self)
+
+                if process.terminationStatus == 0 {
+                    continuation.resume()
+                } else {
+                    continuation.resume(
+                        throwing: OllamaPostProcessingError.generationFailed(
+                            output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                                ? "Ollama could not remove the selected model."
+                                : output.trimmingCharacters(in: .whitespacesAndNewlines)
+                        )
+                    )
+                }
+            }
+
+            do {
+                try process.run()
+            } catch {
+                continuation.resume(throwing: error)
+            }
+        }
     }
 }

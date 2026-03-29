@@ -6,29 +6,19 @@ struct MenuBarContentView: View {
     @ObservedObject var settings: SettingsStore
     let setGlobalShortcut: (GlobalShortcutMonitor.Shortcut?) -> Void
 
-    private var llmEnabledBinding: Binding<Bool> {
-        Binding(
-            get: { settings.isLLMPostProcessingEnabled },
-            set: { model.setLLMPostProcessingEnabled($0) }
-        )
-    }
-
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
             Text("Sepharim Sippur")
                 .font(.system(size: 15, weight: .semibold, design: .rounded))
 
             Text("State: \(model.phase.title)")
-                .font(.system(size: 12, weight: .medium, design: .rounded))
+                .font(.system(size: 11, weight: .medium, design: .rounded))
                 .foregroundStyle(.secondary)
 
             if !model.isCaptureReady {
                 Divider()
 
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Setup")
-                        .font(.system(size: 12, weight: .semibold, design: .rounded))
-
+                VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 8) {
                         if model.isBootstrappingDependencies {
                             ProgressView()
@@ -38,7 +28,6 @@ struct MenuBarContentView: View {
                         Text(model.statusText)
                             .font(.system(size: 11, weight: .regular, design: .rounded))
                             .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
                     }
 
                     Text(model.detailText)
@@ -56,114 +45,21 @@ struct MenuBarContentView: View {
 
             Divider()
 
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Output Folder")
-                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+            SettingsSectionsView(
+                model: model,
+                settings: settings,
+                setGlobalShortcut: setGlobalShortcut,
+                showsFirstUseHelp: true,
+                showsModeExplanation: false,
+                showsAdvancedLLMControls: false
+            )
 
-                Button("Choose Output Folder…") {
-                    settings.chooseOutputFolder()
-                }
-
-                Button("Open Output Folder") {
-                    settings.openOutputFolder()
-                }
-
-                Text(settings.outputFolderPath)
-                    .font(.system(size: 11, weight: .regular, design: .rounded))
-                    .foregroundStyle(.secondary)
-                    .textSelection(.enabled)
-                    .lineLimit(3)
-            }
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Format")
-                    .font(.system(size: 12, weight: .semibold, design: .rounded))
-
-                Picker("Format", selection: $settings.outputFormat) {
-                    ForEach(OutputFormat.allCases) { format in
-                        Text(format.label).tag(format)
-                    }
-                }
-                .pickerStyle(.segmented)
-            }
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Mode")
-                    .font(.system(size: 12, weight: .semibold, design: .rounded))
-
-                Picker("Mode", selection: $settings.outputMode) {
-                    ForEach(OutputMode.allCases) { mode in
-                        Text(mode.label).tag(mode)
-                    }
-                }
-                .pickerStyle(.segmented)
-            }
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Shortcut")
-                    .font(.system(size: 12, weight: .semibold, design: .rounded))
-
-                ShortcutRecorderView(
-                    shortcutDisplayName: settings.globalShortcutDisplayName,
-                    onShortcutChange: setGlobalShortcut
-                )
-
-                if settings.globalShortcut != nil {
-                    Button("Clear Shortcut") {
-                        setGlobalShortcut(nil)
-                    }
-                }
-            }
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Local LLM")
-                    .font(.system(size: 12, weight: .semibold, design: .rounded))
-
-                Toggle("Enable LLM Cleanup", isOn: llmEnabledBinding)
-                    .toggleStyle(.switch)
-
-                if settings.isLLMPostProcessingEnabled {
-                    Toggle("Generate Cleaner Title", isOn: $settings.llmGeneratesTitle)
-                        .toggleStyle(.switch)
-                        .disabled(settings.outputFormat != .md)
-
-                    if settings.outputFormat == .md, settings.outputMode == .obsidian {
-                        Toggle("Add [[wikilinks]]", isOn: $settings.llmAddsObsidianWikilinks)
-                            .toggleStyle(.switch)
-                    }
-                }
-
-                HStack(spacing: 8) {
-                    if model.isPreparingLLM {
-                        ProgressView()
-                            .controlSize(.small)
-                    }
-
-                    Text(model.llmStatusText)
-                        .font(.system(size: 11, weight: .regular, design: .rounded))
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                if settings.isLLMPostProcessingEnabled,
-                   model.isCaptureReady,
-                   !model.isPreparingLLM,
-                   model.llmStatusText != "LLM ready." {
-                    Button("Retry LLM Setup") {
-                        model.retryLLMSetup()
-                    }
-                }
-            }
-
-            if model.lastRecordingURL != nil {
-                Button("Reveal Last Recording") {
-                    model.revealLastRecording()
-                }
-            }
-
-            if model.lastSavedNoteURL != nil {
-                Button("Reveal Last Saved Note") {
-                    model.revealLastSavedNote()
+            if settings.isLLMPostProcessingEnabled,
+               model.isCaptureReady,
+               !model.isPreparingLLM,
+               !model.llmStatusText.hasPrefix("LLM ready") {
+                Button("Retry LLM Setup") {
+                    model.retryLLMSetup()
                 }
             }
 
@@ -173,7 +69,7 @@ struct MenuBarContentView: View {
                 NSApp.terminate(nil)
             }
         }
-        .padding(14)
+        .padding(12)
         .frame(width: 320)
     }
 }

@@ -7,9 +7,11 @@ final class SettingsStore: ObservableObject {
         static let outputFolderPath = "outputFolderPath"
         static let outputFormat = "outputFormat"
         static let outputMode = "outputMode"
+        static let copySavedNoteToClipboard = "copySavedNoteToClipboard"
+        static let hasSeenFirstUseHelp = "hasSeenFirstUseHelp"
+        static let hasSeenLLMCleanupHelp = "hasSeenLLMCleanupHelp"
         static let llmPostProcessingEnabled = "llmPostProcessingEnabled"
-        static let llmGeneratesTitle = "llmGeneratesTitle"
-        static let llmAddsObsidianWikilinks = "llmAddsObsidianWikilinks"
+        static let legacyPreferredLLMModel = "preferredLLMModel"
         static let shortcutKeyCode = "shortcutKeyCode"
         static let shortcutCarbonModifiers = "shortcutCarbonModifiers"
         static let shortcutDisplayName = "shortcutDisplayName"
@@ -36,15 +38,21 @@ final class SettingsStore: ObservableObject {
         }
     }
 
-    @Published var llmGeneratesTitle: Bool {
+    @Published var copySavedNoteToClipboard: Bool {
         didSet {
-            userDefaults.set(llmGeneratesTitle, forKey: Keys.llmGeneratesTitle)
+            userDefaults.set(copySavedNoteToClipboard, forKey: Keys.copySavedNoteToClipboard)
         }
     }
 
-    @Published var llmAddsObsidianWikilinks: Bool {
+    @Published private(set) var hasSeenFirstUseHelp: Bool {
         didSet {
-            userDefaults.set(llmAddsObsidianWikilinks, forKey: Keys.llmAddsObsidianWikilinks)
+            userDefaults.set(hasSeenFirstUseHelp, forKey: Keys.hasSeenFirstUseHelp)
+        }
+    }
+
+    @Published private(set) var hasSeenLLMCleanupHelp: Bool {
+        didSet {
+            userDefaults.set(hasSeenLLMCleanupHelp, forKey: Keys.hasSeenLLMCleanupHelp)
         }
     }
 
@@ -77,8 +85,11 @@ final class SettingsStore: ObservableObject {
             globalShortcut = nil
         }
         isLLMPostProcessingEnabled = userDefaults.bool(forKey: Keys.llmPostProcessingEnabled)
-        llmGeneratesTitle = userDefaults.bool(forKey: Keys.llmGeneratesTitle)
-        llmAddsObsidianWikilinks = userDefaults.bool(forKey: Keys.llmAddsObsidianWikilinks)
+        copySavedNoteToClipboard = userDefaults.bool(forKey: Keys.copySavedNoteToClipboard)
+        hasSeenFirstUseHelp = userDefaults.bool(forKey: Keys.hasSeenFirstUseHelp)
+        hasSeenLLMCleanupHelp = userDefaults.bool(forKey: Keys.hasSeenLLMCleanupHelp)
+
+        userDefaults.removeObject(forKey: Keys.legacyPreferredLLMModel)
 
         ensureOutputFolderExists()
         persistOutputFolder()
@@ -103,8 +114,8 @@ final class SettingsStore: ObservableObject {
     var llmPostProcessingSettings: LLMPostProcessingSettings {
         LLMPostProcessingSettings(
             isEnabled: isLLMPostProcessingEnabled,
-            generatesTitle: llmGeneratesTitle,
-            addsObsidianWikilinks: llmAddsObsidianWikilinks
+            generatesTitle: outputFormat == .md,
+            addsObsidianWikilinks: outputFormat == .md && outputMode == .obsidian
         )
     }
 
@@ -146,6 +157,14 @@ final class SettingsStore: ObservableObject {
             userDefaults.removeObject(forKey: Keys.shortcutCarbonModifiers)
             userDefaults.removeObject(forKey: Keys.shortcutDisplayName)
         }
+    }
+
+    func markFirstUseHelpSeen() {
+        hasSeenFirstUseHelp = true
+    }
+
+    func markLLMCleanupHelpSeen() {
+        hasSeenLLMCleanupHelp = true
     }
 
     private func ensureOutputFolderExists() {

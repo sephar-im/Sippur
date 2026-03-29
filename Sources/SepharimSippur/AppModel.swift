@@ -3,27 +3,29 @@ import AppKit
 
 @MainActor
 final class AppModel: ObservableObject {
-    private let idleStatusText = "Click the circle to start recording."
-    private let idleDetailText = "Recording will be transcribed locally and saved automatically when it stops."
-    private let recoverableErrorDetailText = "The app stayed stable. Click the circle to try recording again."
+    private let idleStatusText = "Click the circle to capture a note."
+    private let idleDetailText = "Speak, click again to finish, and the text note will save automatically."
+    private let recoverableErrorDetailText = "The app stayed stable. Click the circle to try again."
     private let bootstrapFailureDetailText = "Local transcription setup did not finish. Retry setup to keep the app ready for fast capture."
 
     @Published private(set) var phase: CapturePhase = .idle
     @Published private(set) var statusText: String
     @Published private(set) var detailText: String
-    @Published private(set) var lastRecordingURL: URL?
     @Published private(set) var lastSavedNoteURL: URL?
     @Published private(set) var isCaptureReady = false
     @Published private(set) var isBootstrappingDependencies = false
     @Published private(set) var hasBlockingSetupFailure = false
     @Published private(set) var llmStatusText = "LLM cleanup is disabled."
     @Published private(set) var isPreparingLLM = false
+    @Published private(set) var isOllamaInstalled = false
+    @Published private(set) var preparedLLMModel: LocalLLMModel?
 
     let settings: SettingsStore
     private let recordingService: RecordingServicing
     private let transcriptionService: TranscriptionServicing
     private let llmPostProcessingService: LLMPostProcessingServicing
     private let noteExporter: NoteExporting
+    private let clipboardWriter: ClipboardWriting
     private var isPerformingPrimaryAction = false
     private var hasStartedDependencyBootstrap = false
     private var successResetTask: Task<Void, Never>?
@@ -33,7 +35,8 @@ final class AppModel: ObservableObject {
         recordingService: RecordingServicing = RecordingService(),
         transcriptionService: TranscriptionServicing = WhisperTranscriptionService(),
         llmPostProcessingService: LLMPostProcessingServicing = OllamaPostProcessingService(),
-        noteExporter: NoteExporting = NoteExporter()
+        noteExporter: NoteExporting = NoteExporter(),
+        clipboardWriter: ClipboardWriting = SystemClipboardWriter()
     ) {
         self.statusText = idleStatusText
         self.detailText = idleDetailText
@@ -42,28 +45,13 @@ final class AppModel: ObservableObject {
         self.transcriptionService = transcriptionService
         self.llmPostProcessingService = llmPostProcessingService
         self.noteExporter = noteExporter
+        self.clipboardWriter = clipboardWriter
         self.recordingService.unexpectedFailureHandler = { [weak self] error in
-            self?.lastRecordingURL = nil
             self?.transitionToError(error.localizedDescription)
         }
 
         if settings.isLLMPostProcessingEnabled {
             llmStatusText = "LLM setup will start after transcription is ready."
-        }
-    }
-
-    var menuBarSymbolName: String {
-        switch phase {
-        case .recording:
-            return "record.circle.fill"
-        case .processing:
-            return "hourglass.circle.fill"
-        case .success:
-            return "checkmark.circle.fill"
-        case .error:
-            return "exclamationmark.circle.fill"
-        case .idle:
-            return "mic.circle.fill"
         }
     }
 
@@ -77,6 +65,7 @@ final class AppModel: ObservableObject {
         guard !hasStartedDependencyBootstrap else { return }
         hasStartedDependencyBootstrap = true
 
+        await refreshLLMAvailability()
         await bootstrapRequiredDependencies()
 
         if isCaptureReady, settings.llmPostProcessingSettings.isEnabled {
@@ -86,6 +75,7 @@ final class AppModel: ObservableObject {
 
     func retryDependencyBootstrap() {
         Task {
+            await refreshLLMAvailability()
             await bootstrapRequiredDependencies()
 
             if isCaptureReady, settings.llmPostProcessingSettings.isEnabled {
@@ -108,6 +98,17 @@ final class AppModel: ObservableObject {
         }
 
         Task {
+            await refreshLLMAvailability()
+            await prepareLLMIfNeeded()
+        }
+    }
+
+    func setPreferredLLMModel(_ model: LocalLLMModel?) {
+        settings.preferredLLMModel = model
+
+        guard settings.llmPostProcessingSettings.isEnabled, isCaptureReady else { return }
+
+        Task {
             await prepareLLMIfNeeded()
         }
     }
@@ -116,13 +117,17 @@ final class AppModel: ObservableObject {
         guard settings.llmPostProcessingSettings.isEnabled, isCaptureReady else { return }
 
         Task {
+            await refreshLLMAvailability()
             await prepareLLMIfNeeded()
         }
     }
 
-    func revealLastRecording() {
-        guard let lastRecordingURL else { return }
-        NSWorkspace.shared.activateFileViewerSelecting([lastRecordingURL])
+    func removeDownloadedLLM() {
+        guard !isPreparingLLM else { return }
+
+        Task {
+            await removeSelectedLLM()
+        }
     }
 
     func revealLastSavedNote() {
@@ -156,11 +161,11 @@ final class AppModel: ObservableObject {
         }
 
         do {
-            let recordingURL = try recordingService.startRecording()
+            _ = try recordingService.startRecording()
             clearSessionArtifacts()
             phase = .recording
-            statusText = "Recording in progress."
-            detailText = "Temporary file: \(recordingURL.lastPathComponent)"
+            statusText = "Listening."
+            detailText = "Speak and click again to finish."
         } catch {
             transitionToError(error.localizedDescription)
         }
@@ -168,15 +173,17 @@ final class AppModel: ObservableObject {
 
     private func stopRecording() async {
         phase = .processing
-        statusText = "Finalizing recording."
-        detailText = "Writing the temporary audio file."
+        statusText = "Processing note."
+        detailText = "Transcribing locally."
 
         do {
             let recordingURL = try await recordingService.stopRecording()
-            lastRecordingURL = recordingURL
+            defer {
+                cleanupTemporaryAudio(at: recordingURL)
+            }
 
             statusText = "Transcribing locally with Whisper."
-            detailText = recordingURL.lastPathComponent
+            detailText = "Turning speech into text."
 
             let transcription = try await transcriptionService.transcribeAudio(at: recordingURL)
             var noteContent = NoteContent.whisperOnly(body: transcription)
@@ -197,10 +204,18 @@ final class AppModel: ObservableObject {
                             }
                         }
                     )
-                    llmStatusText = "LLM ready."
+                    if let preferredLLMModel = settings.preferredLLMModel {
+                        preparedLLMModel = preferredLLMModel
+                        llmStatusText = "LLM ready (\(preferredLLMModel.label))."
+                    } else if let preparedLLMModel {
+                        llmStatusText = "LLM ready (\(preparedLLMModel.label))."
+                    } else {
+                        llmStatusText = "LLM ready."
+                    }
                 } catch {
                     usedLLMFallback = true
                     noteContent = .whisperOnly(body: transcription)
+                    preparedLLMModel = nil
                     llmStatusText = "LLM unavailable. Whisper-only fallback will be used."
                 }
             }
@@ -215,14 +230,23 @@ final class AppModel: ObservableObject {
                 date: .now
             )
 
+            if settings.copySavedNoteToClipboard {
+                copyToClipboard(noteContent.body)
+            }
+
             lastSavedNoteURL = noteURL
             phase = .success
             if usedLLMFallback {
-                statusText = "Saved \(noteURL.lastPathComponent). Used Whisper transcription only."
+                statusText = settings.copySavedNoteToClipboard
+                    ? "Saved \(noteURL.lastPathComponent) and copied the text."
+                    : "Saved \(noteURL.lastPathComponent). Used Whisper transcription only."
             } else {
-                statusText = "Saved \(noteURL.lastPathComponent)."
+                statusText = settings.copySavedNoteToClipboard
+                    ? "Saved \(noteURL.lastPathComponent) and copied the text."
+                    : "Saved \(noteURL.lastPathComponent)."
             }
             detailText = noteURL.path
+            settings.markFirstUseHelpSeen()
             scheduleReturnToIdleAfterSuccess()
         } catch {
             isPreparingLLM = false
@@ -231,7 +255,6 @@ final class AppModel: ObservableObject {
     }
 
     private func clearSessionArtifacts() {
-        lastRecordingURL = nil
         lastSavedNoteURL = nil
     }
 
@@ -288,6 +311,10 @@ final class AppModel: ObservableObject {
         isBootstrappingDependencies = false
     }
 
+    private func refreshLLMAvailability() async {
+        isOllamaInstalled = await llmPostProcessingService.isOllamaInstalled()
+    }
+
     private func transitionToError(_ message: String) {
         cancelPendingSuccessReset()
         phase = .error
@@ -306,18 +333,50 @@ final class AppModel: ObservableObject {
         isPreparingLLM = true
 
         do {
-            _ = try await llmPostProcessingService.prepare(
+            let preparedModel = try await llmPostProcessingService.prepare(
                 settings: settings.llmPostProcessingSettings,
                 progress: { [weak self] summary, detail in
                     self?.llmStatusText = summary
                     _ = detail
                 }
             )
-            llmStatusText = "LLM ready."
+            self.preparedLLMModel = preparedModel
+            llmStatusText = "LLM ready (\(preparedModel.label))."
         } catch {
+            preparedLLMModel = nil
             llmStatusText = "LLM unavailable. Whisper-only fallback will be used."
         }
 
         isPreparingLLM = false
+    }
+
+    private func removeSelectedLLM() async {
+        isPreparingLLM = true
+
+        do {
+            let removedModel = try await llmPostProcessingService.removeModel(
+                settings: settings.llmPostProcessingSettings,
+                progress: { [weak self] summary, detail in
+                    self?.llmStatusText = summary
+                    _ = detail
+                }
+            )
+            preparedLLMModel = nil
+            settings.preferredLLMModel = nil
+            settings.isLLMPostProcessingEnabled = false
+            llmStatusText = "Removed \(removedModel.label). LLM cleanup is disabled."
+        } catch {
+            llmStatusText = error.localizedDescription
+        }
+
+        isPreparingLLM = false
+    }
+
+    private func copyToClipboard(_ text: String) {
+        clipboardWriter.write(text)
+    }
+
+    private func cleanupTemporaryAudio(at url: URL) {
+        try? FileManager.default.removeItem(at: url)
     }
 }

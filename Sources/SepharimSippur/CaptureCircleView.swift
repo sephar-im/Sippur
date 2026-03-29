@@ -27,14 +27,7 @@ struct CaptureCircleView: View {
                     Circle()
                         .stroke(Color.white.opacity(0.14), lineWidth: 1)
                 }
-                .shadow(color: glowColor.opacity(glowOpacity), radius: 22, y: 8)
                 .scaleEffect(phase.shouldPulse ? (pulse ? 1.08 : 0.93) : 1.0)
-
-            Circle()
-                .fill(glowColor.opacity(phase.shouldPulse ? (pulse ? 0.18 : 0.08) : 0.0))
-                .frame(width: 160, height: 160)
-                .blur(radius: 10)
-                .scaleEffect(phase.shouldPulse ? (pulse ? 1.22 : 1.0) : 1.0)
 
             Circle()
                 .trim(from: phase.outerRingTrimRange.lowerBound, to: phase.outerRingTrimRange.upperBound)
@@ -76,21 +69,6 @@ struct CaptureCircleView: View {
 
     private var glowColor: Color {
         phase.accentColor
-    }
-
-    private var glowOpacity: Double {
-        switch phase {
-        case .recording:
-            return 0.60
-        case .processing:
-            return 0.34
-        case .success:
-            return 0.34
-        case .error:
-            return 0.36
-        case .idle:
-            return 0.18
-        }
     }
 
     private var ringOpacity: Double {

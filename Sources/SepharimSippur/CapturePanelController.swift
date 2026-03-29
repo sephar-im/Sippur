@@ -34,7 +34,8 @@ final class CapturePanelController: ObservableObject {
         panel.backgroundColor = .clear
         panel.isOpaque = false
         panel.hasShadow = false
-        panel.level = .normal
+        panel.isFloatingPanel = true
+        panel.level = .floating
         panel.isMovableByWindowBackground = false
         panel.isReleasedWhenClosed = false
         panel.hidesOnDeactivate = false
@@ -162,23 +163,8 @@ private extension NSEvent {
 enum ApplicationIconLoader {
     @MainActor
     static func applyAppIcon() {
-        if let bundledIcon = loadBundledIcon() {
-            NSApp.applicationIconImage = bundledIcon
-            return
+        if let applicationIcon = BrandImageLoader.applicationIcon() {
+            NSApp.applicationIconImage = applicationIcon
         }
-
-        let fallbackURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-            .appending(component: "sippur.png", directoryHint: .notDirectory)
-        if let fallbackIcon = NSImage(contentsOf: fallbackURL) {
-            NSApp.applicationIconImage = fallbackIcon
-        }
-    }
-
-    private static func loadBundledIcon() -> NSImage? {
-        let bundledIconURL = Bundle.main.bundleURL
-            .appendingPathComponent("Contents", isDirectory: true)
-            .appendingPathComponent("Resources", isDirectory: true)
-            .appendingPathComponent("AppIcon.icns", isDirectory: false)
-        return NSImage(contentsOf: bundledIconURL)
     }
 }
