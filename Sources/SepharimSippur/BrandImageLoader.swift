@@ -49,6 +49,13 @@ enum BrandImageLoader {
     }
 
     private static func loadBundledApplicationIcon() -> NSImage? {
+        if Bundle.main.bundleURL.pathExtension == "app" {
+            let workspaceIcon = NSWorkspace.shared.icon(forFile: Bundle.main.bundleURL.path)
+            if workspaceIcon.isValid {
+                return workspaceIcon
+            }
+        }
+
         let bundledIconURL = Bundle.main.bundleURL
             .appendingPathComponent("Contents", isDirectory: true)
             .appendingPathComponent("Resources", isDirectory: true)
