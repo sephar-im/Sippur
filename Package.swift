@@ -5,6 +5,7 @@ import PackageDescription
 
 let package = Package(
     name: "SepharimSippur",
+    defaultLocalization: "en",
     platforms: [
         .macOS(.v14),
     ],
@@ -22,6 +23,9 @@ let package = Package(
             name: "SepharimSippur",
             dependencies: [
                 .product(name: "SwiftWhisper", package: "SwiftWhisper"),
+            ],
+            resources: [
+                .process("Resources"),
             ]
         ),
         .executableTarget(

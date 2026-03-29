@@ -16,13 +16,6 @@ struct SettingsSectionsView: View {
         )
     }
 
-    private var preferredLLMModelBinding: Binding<LocalLLMModel?> {
-        Binding(
-            get: { settings.preferredLLMModel },
-            set: { model.setPreferredLLMModel($0) }
-        )
-    }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             if showsFirstUseHelp, !settings.hasSeenFirstUseHelp {
@@ -41,6 +34,15 @@ struct SettingsSectionsView: View {
                 }
                 .padding(10)
                 .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            }
+
+            section("Capture") {
+                Picker("Size", selection: $settings.captureControlSize) {
+                    ForEach(CaptureControlSize.allCases) { size in
+                        Text(size.label).tag(size)
+                    }
+                }
+                .pickerStyle(.segmented)
             }
 
             section("Notes") {
@@ -111,6 +113,24 @@ struct SettingsSectionsView: View {
                     llmEnabledBinding.wrappedValue.toggle()
                 }
 
+                if settings.isLLMPostProcessingEnabled, !settings.hasSeenLLMCleanupHelp {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Helpful, not perfect.")
+                            .font(.system(size: 12, weight: .semibold, design: .rounded))
+
+                        Text("It is meant to clean the Whisper text: punctuation, paragraphing, obvious speech repairs, and context-based spelling fixes. Review important notes because it can still make mistakes.")
+                            .font(.system(size: 11, weight: .regular, design: .rounded))
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        Button("Got It") {
+                            settings.markLLMCleanupHelpSeen()
+                        }
+                    }
+                    .padding(10)
+                    .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                }
+
                 Text(model.llmStatusText)
                     .font(.system(size: 11, weight: .regular, design: .rounded))
                     .foregroundStyle(.secondary)
@@ -118,21 +138,17 @@ struct SettingsSectionsView: View {
 
                 if showsAdvancedLLMControls, settings.isLLMPostProcessingEnabled {
                     if model.isOllamaInstalled, model.preparedLLMModel != nil {
-                        Picker("Model", selection: preferredLLMModelBinding) {
-                            Text("Automatic").tag(LocalLLMModel?.none)
-                            ForEach(LocalLLMModel.allCases) { model in
-                                Text(model.label).tag(Optional(model))
-                            }
-                        }
+                        Text("Uses \(LocalLLMModel.cleanupModel.label) for local cleanup.")
+                            .font(.system(size: 11, weight: .regular, design: .rounded))
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
 
-                        if settings.preferredLLMModel != nil {
-                            Button("Remove this model") {
-                                model.removeDownloadedLLM()
-                            }
-                            .disabled(model.isPreparingLLM)
+                        Button("Remove downloaded model") {
+                            model.removeDownloadedLLM()
                         }
+                        .disabled(model.isPreparingLLM)
                     } else if model.isOllamaInstalled {
-                        Text("No local LLM downloaded. Enable Local LLM to prepare it again.")
+                        Text("No local model is ready yet. Enable Local LLM to prepare \(LocalLLMModel.cleanupModel.label).")
                             .font(.system(size: 11, weight: .regular, design: .rounded))
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)

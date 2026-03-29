@@ -24,7 +24,7 @@ public struct SepharimSippurRootScene: Scene {
         DispatchQueue.main.async {
             NSApp.setActivationPolicy(.regular)
             ApplicationIconLoader.applyAppIcon()
-            capturePanelController.installIfNeeded(model: model)
+            capturePanelController.installIfNeeded(model: model, settings: settings)
             capturePanelController.showCaptureWindow()
             shortcutMonitor.updateShortcut(settings.globalShortcut)
             shortcutMonitor.startIfNeeded()

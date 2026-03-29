@@ -82,7 +82,7 @@ private final class MockLLMPostProcessingService: LLMPostProcessingServicing {
     var prepareCalls = 0
     var removeCalls = 0
     var postProcessCalls = 0
-    var preparedModel: LocalLLMModel = .qwen25_05b
+    var preparedModel: LocalLLMModel = .qwen25_15b
     var removedModel: LocalLLMModel?
     var removeResult: Result<Void, Error> = .success(())
     var postProcessResult: Result<NoteContent, Error> = .success(
@@ -99,7 +99,7 @@ private final class MockLLMPostProcessingService: LLMPostProcessingServicing {
     ) async throws -> LocalLLMModel {
         prepareCalls += 1
         progress("LLM ready.", nil)
-        return settings.preferredModel ?? preparedModel
+        return preparedModel
     }
 
     func removeModel(
@@ -107,11 +107,10 @@ private final class MockLLMPostProcessingService: LLMPostProcessingServicing {
         progress: @escaping @MainActor (String, String?) -> Void
     ) async throws -> LocalLLMModel {
         removeCalls += 1
-        let model = settings.preferredModel ?? preparedModel
-        removedModel = model
+        removedModel = preparedModel
         progress("Downloaded LLM removed.", nil)
         try removeResult.get()
-        return model
+        return preparedModel
     }
 
     func postProcess(
@@ -195,17 +194,6 @@ final class SepharimSippurTests: XCTestCase {
     }
 
     @MainActor
-    func testSettingsPersistPreferredLLMModel() {
-        let suiteName = "SepharimSippurTests.preferred-llm.\(UUID().uuidString)"
-        let store = makeTestSettingsStore(suiteName: suiteName, reset: true)
-
-        store.preferredLLMModel = .qwen25_15b
-
-        let reloadedStore = makeTestSettingsStore(suiteName: suiteName)
-        XCTAssertEqual(reloadedStore.preferredLLMModel, .qwen25_15b)
-    }
-
-    @MainActor
     func testSettingsPersistClipboardOption() {
         let suiteName = "SepharimSippurTests.clipboard.\(UUID().uuidString)"
         let store = makeTestSettingsStore(suiteName: suiteName, reset: true)
@@ -214,6 +202,28 @@ final class SepharimSippurTests: XCTestCase {
 
         let reloadedStore = makeTestSettingsStore(suiteName: suiteName)
         XCTAssertTrue(reloadedStore.copySavedNoteToClipboard)
+    }
+
+    @MainActor
+    func testSettingsPersistCaptureControlSize() {
+        let suiteName = "SepharimSippurTests.capture-size.\(UUID().uuidString)"
+        let store = makeTestSettingsStore(suiteName: suiteName, reset: true)
+
+        store.captureControlSize = .small
+
+        let reloadedStore = makeTestSettingsStore(suiteName: suiteName)
+        XCTAssertEqual(reloadedStore.captureControlSize, .small)
+    }
+
+    @MainActor
+    func testSettingsPersistLLMCleanupHelpFlag() {
+        let suiteName = "SepharimSippurTests.llm-help.\(UUID().uuidString)"
+        let store = makeTestSettingsStore(suiteName: suiteName, reset: true)
+
+        store.markLLMCleanupHelpSeen()
+
+        let reloadedStore = makeTestSettingsStore(suiteName: suiteName)
+        XCTAssertTrue(reloadedStore.hasSeenLLMCleanupHelp)
     }
 
     func testTxtDraftUsesSortableFilenameAndPlainTextBody() {
@@ -321,18 +331,8 @@ final class SepharimSippurTests: XCTestCase {
         }
     }
 
-    func testModelSelectorUsesSmallerModelForLowAvailableMemory() {
-        XCTAssertEqual(
-            OllamaModelSelector.recommendedModel(availableMemoryBytes: 2 * 1024 * 1024 * 1024),
-            .qwen25_05b
-        )
-    }
-
-    func testModelSelectorUsesLargerModelWhenMemoryIsSufficient() {
-        XCTAssertEqual(
-            OllamaModelSelector.recommendedModel(availableMemoryBytes: 10 * 1024 * 1024 * 1024),
-            .qwen25_15b
-        )
+    func testFixedCleanupModelUsesQwen15B() {
+        XCTAssertEqual(LocalLLMModel.cleanupModel, .qwen25_15b)
     }
 
     @MainActor
@@ -403,31 +403,6 @@ final class SepharimSippurTests: XCTestCase {
 
         XCTAssertEqual(transcriptionService.prepareCalls, 1)
         XCTAssertEqual(llmService.prepareCalls, 1)
-        XCTAssertEqual(model.llmStatusText, "LLM ready (Qwen 0.5B).")
-    }
-
-    @MainActor
-    func testSelectingPreferredLLMModelTriggersPreparationWhenEnabled() async {
-        let transcriptionService = MockTranscriptionService()
-        let llmService = MockLLMPostProcessingService()
-        llmService.preparedModel = .qwen25_05b
-        let suiteName = "SepharimSippurTests.preferred-model.\(UUID().uuidString)"
-        let settings = makeTestSettingsStore(suiteName: suiteName, reset: true)
-        settings.isLLMPostProcessingEnabled = true
-
-        let model = AppModel(
-            settings: settings,
-            recordingService: MockRecordingService(),
-            transcriptionService: transcriptionService,
-            llmPostProcessingService: llmService
-        )
-
-        await model.bootstrapDependenciesOnLaunch()
-        model.setPreferredLLMModel(.qwen25_15b)
-        try? await Task.sleep(nanoseconds: 50_000_000)
-
-        XCTAssertEqual(settings.preferredLLMModel, .qwen25_15b)
-        XCTAssertEqual(model.preparedLLMModel, .qwen25_15b)
         XCTAssertEqual(model.llmStatusText, "LLM ready (Qwen 1.5B).")
     }
 
@@ -438,7 +413,6 @@ final class SepharimSippurTests: XCTestCase {
         let suiteName = "SepharimSippurTests.remove-llm.\(UUID().uuidString)"
         let settings = makeTestSettingsStore(suiteName: suiteName, reset: true)
         settings.isLLMPostProcessingEnabled = true
-        settings.preferredLLMModel = .qwen25_15b
 
         let model = AppModel(
             settings: settings,
@@ -454,7 +428,6 @@ final class SepharimSippurTests: XCTestCase {
         XCTAssertEqual(llmService.removeCalls, 1)
         XCTAssertEqual(llmService.removedModel, .qwen25_15b)
         XCTAssertNil(model.preparedLLMModel)
-        XCTAssertNil(settings.preferredLLMModel)
         XCTAssertFalse(settings.isLLMPostProcessingEnabled)
         XCTAssertEqual(model.llmStatusText, "Removed Qwen 1.5B. LLM cleanup is disabled.")
     }

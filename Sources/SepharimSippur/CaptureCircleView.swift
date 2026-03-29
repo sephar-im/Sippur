@@ -3,6 +3,7 @@ import SwiftUI
 struct CaptureCircleView: View {
     let phase: CapturePhase
     let isEnabled: Bool
+    let scale: CGFloat
 
     @State private var pulse = false
     @State private var spinRing = false
@@ -41,6 +42,7 @@ struct CaptureCircleView: View {
             symbolView
         }
         .frame(width: 184, height: 184)
+        .scaleEffect(scale)
         .disabled(!isEnabled)
         .opacity(isEnabled ? 1.0 : 0.88)
         .animation(.easeInOut(duration: 0.24), value: phase)

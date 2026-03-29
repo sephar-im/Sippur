@@ -1,61 +1,5 @@
 import AppKit
 import Foundation
-import Darwin.Mach
-
-struct OllamaModelSelector {
-    static let lowMemoryThresholdBytes: UInt64 = 6 * 1024 * 1024 * 1024
-
-    static func recommendedModel(availableMemoryBytes: UInt64) -> LocalLLMModel {
-        if availableMemoryBytes < lowMemoryThresholdBytes {
-            return .qwen25_05b
-        }
-
-        return .qwen25_15b
-    }
-
-    static func selectedModel(
-        preferredModel: LocalLLMModel?,
-        availableMemoryBytes: UInt64
-    ) -> LocalLLMModel {
-        preferredModel ?? recommendedModel(availableMemoryBytes: availableMemoryBytes)
-    }
-}
-
-struct SystemMemorySnapshot {
-    let physicalMemoryBytes: UInt64
-    let availableMemoryBytes: UInt64
-
-    static func current() -> SystemMemorySnapshot {
-        let physicalMemoryBytes = ProcessInfo.processInfo.physicalMemory
-        let availableMemoryBytes = availableMemoryEstimate() ?? physicalMemoryBytes
-        return SystemMemorySnapshot(
-            physicalMemoryBytes: physicalMemoryBytes,
-            availableMemoryBytes: availableMemoryBytes
-        )
-    }
-
-    private static func availableMemoryEstimate() -> UInt64? {
-        var statistics = vm_statistics64()
-        var count = mach_msg_type_number_t(MemoryLayout.size(ofValue: statistics) / MemoryLayout<integer_t>.size)
-        let result = withUnsafeMutablePointer(to: &statistics) { pointer in
-            pointer.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { reboundPointer in
-                host_statistics64(mach_host_self(), HOST_VM_INFO64, reboundPointer, &count)
-            }
-        }
-
-        guard result == KERN_SUCCESS else {
-            return nil
-        }
-
-        var pageSize: vm_size_t = 0
-        guard host_page_size(mach_host_self(), &pageSize) == KERN_SUCCESS else {
-            return nil
-        }
-
-        let availablePages = UInt64(statistics.free_count + statistics.inactive_count + statistics.speculative_count)
-        return availablePages * UInt64(pageSize)
-    }
-}
 
 @MainActor
 protocol LLMPostProcessingServicing {
@@ -148,6 +92,7 @@ final class OllamaPostProcessingService: LLMPostProcessingServicing {
     private let fileManager: FileManager
     private let urlSession: URLSession
     private let apiBaseURL: URL
+    private let cleanupModel = LocalLLMModel.cleanupModel
     private var preparedModel: LocalLLMModel?
 
     init(
@@ -165,13 +110,10 @@ final class OllamaPostProcessingService: LLMPostProcessingServicing {
     }
 
     func prepare(
-        settings: LLMPostProcessingSettings,
+        settings _: LLMPostProcessingSettings,
         progress: @escaping @MainActor (String, String?) -> Void
     ) async throws -> LocalLLMModel {
-        let selectedModel = OllamaModelSelector.selectedModel(
-            preferredModel: settings.preferredModel,
-            availableMemoryBytes: SystemMemorySnapshot.current().availableMemoryBytes
-        )
+        let selectedModel = cleanupModel
 
         if preparedModel == selectedModel, (try? await fetchVersion()) != nil {
             progress("LLM ready.", nil)
@@ -194,13 +136,10 @@ final class OllamaPostProcessingService: LLMPostProcessingServicing {
     }
 
     func removeModel(
-        settings: LLMPostProcessingSettings,
+        settings _: LLMPostProcessingSettings,
         progress: @escaping @MainActor (String, String?) -> Void
     ) async throws -> LocalLLMModel {
-        let selectedModel = OllamaModelSelector.selectedModel(
-            preferredModel: settings.preferredModel,
-            availableMemoryBytes: SystemMemorySnapshot.current().availableMemoryBytes
-        )
+        let selectedModel = cleanupModel
 
         progress("Checking Ollama.", nil)
         let installation = try locateInstallation()
@@ -454,9 +393,14 @@ final class OllamaPostProcessingService: LLMPostProcessingServicing {
             && exportSettings.mode == .obsidian
 
         return """
-        You clean short voice note transcriptions.
-        Correct only obvious transcription mistakes supported by nearby context.
+        You clean short voice note transcriptions into final saved note text.
+        Preserve the original language of the transcription. Never translate it into English or any other language.
+        If the transcription mixes languages, keep that mix only where it already exists.
+        Correct only obvious transcription mistakes that are strongly supported by nearby context.
         Improve punctuation and paragraphing.
+        Remove filler words, repeated starts, and speech disfluencies only when the intended meaning stays the same.
+        When the speaker clearly corrects themselves, keep the final corrected information and remove the superseded draft wording.
+        If a term is uncertain, keep the original wording instead of guessing.
         Do not summarize, invent facts, extract tasks, or add assistant commentary.
         Return valid JSON with keys "title" and "body".
         The "body" value must contain only the cleaned note body.
@@ -482,6 +426,8 @@ final class OllamaPostProcessingService: LLMPostProcessingServicing {
         Output target: \(formatDescription)
         Generate title: \(llmSettings.generatesTitle && exportSettings.format == .md ? "yes" : "no")
         Add Obsidian wikilinks: \(llmSettings.addsObsidianWikilinks && exportSettings.mode == .obsidian && exportSettings.format == .md ? "yes" : "no")
+        Keep the same language as the raw transcription: yes
+        Prefer final self-corrections over earlier mistaken wording: yes
 
         Raw transcription:
         \(transcription)

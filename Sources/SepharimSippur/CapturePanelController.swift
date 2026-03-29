@@ -1,16 +1,21 @@
 import AppKit
+import Combine
 import SwiftUI
 
 @MainActor
 final class CapturePanelController: ObservableObject {
     private var panel: CapturePanel?
+    private var hostingView: CaptureHostingView<AnyView>?
     private var hasPresentedInitialPanel = false
+    private var sizeObserver: AnyCancellable?
 
-    func installIfNeeded(model: AppModel) {
+    func installIfNeeded(model: AppModel, settings: SettingsStore) {
         guard panel == nil else { return }
 
+        let initialPanelSize = settings.captureControlSize.panelSize
+
         let hostingView = CaptureHostingView(
-            rootView: MainCaptureView(model: model),
+            rootView: AnyView(MainCaptureView(model: model, settings: settings)),
             onActivate: {
                 if model.hasBlockingSetupFailure {
                     model.retryDependencyBootstrap()
@@ -20,12 +25,12 @@ final class CapturePanelController: ObservableObject {
                 model.requestCaptureToggle()
             }
         )
-        hostingView.frame = NSRect(x: 0, y: 0, width: 184, height: 184)
+        hostingView.frame = NSRect(x: 0, y: 0, width: initialPanelSize, height: initialPanelSize)
         hostingView.wantsLayer = true
         hostingView.layer?.backgroundColor = NSColor.clear.cgColor
 
         let panel = CapturePanel(
-            contentRect: NSRect(x: 0, y: 0, width: 184, height: 184),
+            contentRect: NSRect(x: 0, y: 0, width: initialPanelSize, height: initialPanelSize),
             styleMask: [.borderless],
             backing: .buffered,
             defer: false
@@ -44,6 +49,11 @@ final class CapturePanelController: ObservableObject {
         panel.center()
 
         self.panel = panel
+        self.hostingView = hostingView
+        sizeObserver = settings.$captureControlSize
+            .sink { [weak self] size in
+                self?.updatePanelSize(for: size)
+            }
 
         if !hasPresentedInitialPanel {
             hasPresentedInitialPanel = true
@@ -58,6 +68,20 @@ final class CapturePanelController: ObservableObject {
         NSApp.activate(ignoringOtherApps: true)
         panel.orderFrontRegardless()
         panel.makeKeyAndOrderFront(nil)
+    }
+
+    private func updatePanelSize(for size: CaptureControlSize) {
+        guard let panel else { return }
+
+        let side = size.panelSize
+        let newSize = NSSize(width: side, height: side)
+        let newOrigin = NSPoint(
+            x: panel.frame.midX - (newSize.width / 2),
+            y: panel.frame.midY - (newSize.height / 2)
+        )
+
+        hostingView?.frame = NSRect(origin: .zero, size: newSize)
+        panel.setFrame(NSRect(origin: newOrigin, size: newSize), display: true, animate: true)
     }
 }
 

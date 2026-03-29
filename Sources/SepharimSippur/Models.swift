@@ -102,6 +102,40 @@ enum OutputMode: String, CaseIterable, Identifiable {
     }
 }
 
+enum CaptureControlSize: String, CaseIterable, Identifiable {
+    case normal
+    case small
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .normal:
+            return "Normal"
+        case .small:
+            return "Small"
+        }
+    }
+
+    var panelSize: CGFloat {
+        switch self {
+        case .normal:
+            return 184
+        case .small:
+            return 92
+        }
+    }
+
+    var contentScale: CGFloat {
+        switch self {
+        case .normal:
+            return 1.0
+        case .small:
+            return 0.5
+        }
+    }
+}
+
 struct ExportSettings: Equatable {
     let folderURL: URL
     let format: OutputFormat

@@ -7,6 +7,7 @@ final class SettingsStore: ObservableObject {
         static let outputFolderPath = "outputFolderPath"
         static let outputFormat = "outputFormat"
         static let outputMode = "outputMode"
+        static let captureControlSize = "captureControlSize"
         static let copySavedNoteToClipboard = "copySavedNoteToClipboard"
         static let hasSeenFirstUseHelp = "hasSeenFirstUseHelp"
         static let hasSeenLLMCleanupHelp = "hasSeenLLMCleanupHelp"
@@ -26,6 +27,12 @@ final class SettingsStore: ObservableObject {
     @Published var outputMode: OutputMode {
         didSet {
             userDefaults.set(outputMode.rawValue, forKey: Keys.outputMode)
+        }
+    }
+
+    @Published var captureControlSize: CaptureControlSize {
+        didSet {
+            userDefaults.set(captureControlSize.rawValue, forKey: Keys.captureControlSize)
         }
     }
 
@@ -73,6 +80,7 @@ final class SettingsStore: ObservableObject {
         outputFolderURL = storedPath.map(URL.init(fileURLWithPath:)) ?? defaultFolder
         outputFormat = OutputFormat(rawValue: userDefaults.string(forKey: Keys.outputFormat) ?? "") ?? .md
         outputMode = OutputMode(rawValue: userDefaults.string(forKey: Keys.outputMode) ?? "") ?? .normal
+        captureControlSize = CaptureControlSize(rawValue: userDefaults.string(forKey: Keys.captureControlSize) ?? "") ?? .normal
         if let storedKeyCode = userDefaults.object(forKey: Keys.shortcutKeyCode) as? NSNumber,
            let storedModifiers = userDefaults.object(forKey: Keys.shortcutCarbonModifiers) as? NSNumber,
            let storedDisplayName = userDefaults.string(forKey: Keys.shortcutDisplayName) {

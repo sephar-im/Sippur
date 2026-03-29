@@ -51,7 +51,7 @@ final class AppModel: ObservableObject {
         }
 
         if settings.isLLMPostProcessingEnabled {
-            llmStatusText = "LLM setup will start after transcription is ready."
+            llmStatusText = "\(LocalLLMModel.cleanupModel.label) setup will start after transcription is ready."
         }
     }
 
@@ -93,22 +93,12 @@ final class AppModel: ObservableObject {
         }
 
         guard isCaptureReady else {
-            llmStatusText = "LLM setup will start after transcription is ready."
+            llmStatusText = "\(LocalLLMModel.cleanupModel.label) setup will start after transcription is ready."
             return
         }
 
         Task {
             await refreshLLMAvailability()
-            await prepareLLMIfNeeded()
-        }
-    }
-
-    func setPreferredLLMModel(_ model: LocalLLMModel?) {
-        settings.preferredLLMModel = model
-
-        guard settings.llmPostProcessingSettings.isEnabled, isCaptureReady else { return }
-
-        Task {
             await prepareLLMIfNeeded()
         }
     }
@@ -204,14 +194,8 @@ final class AppModel: ObservableObject {
                             }
                         }
                     )
-                    if let preferredLLMModel = settings.preferredLLMModel {
-                        preparedLLMModel = preferredLLMModel
-                        llmStatusText = "LLM ready (\(preferredLLMModel.label))."
-                    } else if let preparedLLMModel {
-                        llmStatusText = "LLM ready (\(preparedLLMModel.label))."
-                    } else {
-                        llmStatusText = "LLM ready."
-                    }
+                    preparedLLMModel = .cleanupModel
+                    llmStatusText = "LLM ready (\(LocalLLMModel.cleanupModel.label))."
                 } catch {
                     usedLLMFallback = true
                     noteContent = .whisperOnly(body: transcription)
@@ -362,7 +346,6 @@ final class AppModel: ObservableObject {
                 }
             )
             preparedLLMModel = nil
-            settings.preferredLLMModel = nil
             settings.isLLMPostProcessingEnabled = false
             llmStatusText = "Removed \(removedModel.label). LLM cleanup is disabled."
         } catch {
