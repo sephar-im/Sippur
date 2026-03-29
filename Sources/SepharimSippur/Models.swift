@@ -11,15 +11,15 @@ enum CapturePhase: Equatable {
     var title: String {
         switch self {
         case .idle:
-            return "Idle"
+            return L10n.tr("phase.idle")
         case .recording:
-            return "Recording"
+            return L10n.tr("phase.recording")
         case .processing:
-            return "Processing"
+            return L10n.tr("phase.processing")
         case .success:
-            return "Success"
+            return L10n.tr("phase.success")
         case .error:
-            return "Error"
+            return L10n.tr("phase.error")
         }
     }
 
@@ -95,43 +95,9 @@ enum OutputMode: String, CaseIterable, Identifiable {
     var label: String {
         switch self {
         case .normal:
-            return "Normal"
+            return L10n.tr("output.mode.normal")
         case .obsidian:
-            return "Obsidian"
-        }
-    }
-}
-
-enum CaptureControlSize: String, CaseIterable, Identifiable {
-    case normal
-    case small
-
-    var id: String { rawValue }
-
-    var label: String {
-        switch self {
-        case .normal:
-            return "Normal"
-        case .small:
-            return "Small"
-        }
-    }
-
-    var panelSize: CGFloat {
-        switch self {
-        case .normal:
-            return 184
-        case .small:
-            return 92
-        }
-    }
-
-    var contentScale: CGFloat {
-        switch self {
-        case .normal:
-            return 1.0
-        case .small:
-            return 0.5
+            return L10n.tr("output.mode.obsidian")
         }
     }
 }

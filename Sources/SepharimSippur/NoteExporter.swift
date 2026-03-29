@@ -12,9 +12,9 @@ struct NoteExporter: NoteExporting {
         var errorDescription: String? {
             switch self {
             case .outputFolderIsFile(let folderURL):
-                return "The selected output path is not a folder: \(folderURL.path)"
+                return L10n.format("note_export.error.path_not_folder", folderURL.path)
             case .couldNotAllocateUniqueFileName(let fileURL):
-                return "A unique note filename could not be created in \(fileURL.deletingLastPathComponent().path)."
+                return L10n.format("note_export.error.unique_filename", fileURL.deletingLastPathComponent().path)
             }
         }
     }
@@ -72,11 +72,11 @@ struct NoteExporter: NoteExporting {
     ) -> String {
         switch mode {
         case .normal:
-            let title = content.title.flatMap { $0.isEmpty ? nil : $0 } ?? "Voice Note"
+            let title = content.title.flatMap { $0.isEmpty ? nil : $0 } ?? L10n.tr("note_export.default_title")
             return """
             # \(title)
 
-            Date: \(displayTimestamp)
+            \(L10n.tr("note_export.date_label")): \(displayTimestamp)
 
             \(content.body)
             """

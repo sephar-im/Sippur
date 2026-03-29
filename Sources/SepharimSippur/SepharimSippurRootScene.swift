@@ -24,7 +24,7 @@ public struct SepharimSippurRootScene: Scene {
         DispatchQueue.main.async {
             NSApp.setActivationPolicy(.regular)
             ApplicationIconLoader.applyAppIcon()
-            capturePanelController.installIfNeeded(model: model, settings: settings)
+            capturePanelController.installIfNeeded(model: model)
             capturePanelController.showCaptureWindow()
             shortcutMonitor.updateShortcut(settings.globalShortcut)
             shortcutMonitor.startIfNeeded()
@@ -63,7 +63,7 @@ public struct SepharimSippurRootScene: Scene {
             SepharimSippurCommands()
         }
 
-        Window("About Sepharim Sippur", id: "about") {
+        Window(L10n.tr("about.window_title"), id: "about") {
             AboutView()
         }
         .windowResizability(.contentSize)

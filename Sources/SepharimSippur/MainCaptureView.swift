@@ -2,7 +2,6 @@ import SwiftUI
 
 struct MainCaptureView: View {
     @ObservedObject var model: AppModel
-    @ObservedObject var settings: SettingsStore
 
     private var visiblePhase: CapturePhase {
         if model.hasBlockingSetupFailure {
@@ -28,14 +27,10 @@ struct MainCaptureView: View {
         ZStack {
             CaptureCircleView(
                 phase: visiblePhase,
-                isEnabled: isInteractive,
-                scale: settings.captureControlSize.contentScale
+                isEnabled: isInteractive
             )
         }
-        .frame(
-            width: settings.captureControlSize.panelSize,
-            height: settings.captureControlSize.panelSize
-        )
+        .frame(width: 184, height: 184)
         .background(Color.clear)
     }
 }

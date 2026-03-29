@@ -20,15 +20,15 @@ struct SettingsSectionsView: View {
         VStack(alignment: .leading, spacing: 12) {
             if showsFirstUseHelp, !settings.hasSeenFirstUseHelp {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("First time here?")
+                    Text(L10n.tr("settings.first_use.title"))
                         .font(.system(size: 12, weight: .semibold, design: .rounded))
 
-                    Text("Click the circle to start and stop. The note is transcribed locally and saved as text in the selected folder.")
+                    Text(L10n.tr("settings.first_use.body"))
                         .font(.system(size: 11, weight: .regular, design: .rounded))
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
 
-                    Button("Got It") {
+                    Button(L10n.tr("settings.got_it")) {
                         settings.markFirstUseHelpSeen()
                     }
                 }
@@ -36,28 +36,19 @@ struct SettingsSectionsView: View {
                 .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             }
 
-            section("Capture") {
-                Picker("Size", selection: $settings.captureControlSize) {
-                    ForEach(CaptureControlSize.allCases) { size in
-                        Text(size.label).tag(size)
-                    }
-                }
-                .pickerStyle(.segmented)
-            }
-
-            section("Notes") {
+            section(L10n.tr("settings.section.notes")) {
                 HStack(spacing: 8) {
-                    Button("Choose folder") {
+                    Button(L10n.tr("settings.notes.choose_folder")) {
                         settings.chooseOutputFolder()
                     }
 
-                    Button("Open folder") {
+                    Button(L10n.tr("settings.notes.open_folder")) {
                         settings.openOutputFolder()
                     }
                 }
 
                 if model.lastSavedNoteURL != nil {
-                    Button("Reveal last saved note") {
+                    Button(L10n.tr("settings.notes.reveal_last_saved_note")) {
                         model.revealLastSavedNote()
                     }
                 }
@@ -68,14 +59,14 @@ struct SettingsSectionsView: View {
                     .textSelection(.enabled)
                     .lineLimit(2)
 
-                Picker("Format", selection: $settings.outputFormat) {
+                Picker(L10n.tr("settings.notes.format"), selection: $settings.outputFormat) {
                     ForEach(OutputFormat.allCases) { format in
                         Text(format.label).tag(format)
                     }
                 }
                 .pickerStyle(.segmented)
 
-                Picker("Mode", selection: $settings.outputMode) {
+                Picker(L10n.tr("settings.notes.mode"), selection: $settings.outputMode) {
                     ForEach(OutputMode.allCases) { mode in
                         Text(mode.label).tag(mode)
                     }
@@ -89,11 +80,11 @@ struct SettingsSectionsView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
-                Toggle("Copy saved text to clipboard", isOn: $settings.copySavedNoteToClipboard)
+                Toggle(L10n.tr("settings.notes.copy_saved_text_to_clipboard"), isOn: $settings.copySavedNoteToClipboard)
                     .toggleStyle(.switch)
             }
 
-            section("Shortcut") {
+            section(L10n.tr("settings.section.shortcut")) {
                 HStack(alignment: .top, spacing: 8) {
                     ShortcutRecorderView(
                         shortcutDisplayName: settings.globalShortcutDisplayName,
@@ -101,29 +92,29 @@ struct SettingsSectionsView: View {
                     )
 
                     if settings.globalShortcut != nil {
-                        Button("Clear") {
+                        Button(L10n.tr("settings.shortcut.clear")) {
                             setGlobalShortcut(nil)
                         }
                     }
                 }
             }
 
-            section("Local LLM") {
-                Button(settings.isLLMPostProcessingEnabled ? "Disable Local LLM" : "Enable Local LLM") {
+            section(L10n.tr("settings.section.llm")) {
+                Button(settings.isLLMPostProcessingEnabled ? L10n.tr("settings.llm.disable") : L10n.tr("settings.llm.enable")) {
                     llmEnabledBinding.wrappedValue.toggle()
                 }
 
                 if settings.isLLMPostProcessingEnabled, !settings.hasSeenLLMCleanupHelp {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("Helpful, not perfect.")
+                        Text(L10n.tr("settings.llm.help_title"))
                             .font(.system(size: 12, weight: .semibold, design: .rounded))
 
-                        Text("It is meant to clean the Whisper text: punctuation, paragraphing, obvious speech repairs, and context-based spelling fixes. Review important notes because it can still make mistakes.")
+                        Text(L10n.tr("settings.llm.body"))
                             .font(.system(size: 11, weight: .regular, design: .rounded))
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
 
-                        Button("Got It") {
+                        Button(L10n.tr("settings.got_it")) {
                             settings.markLLMCleanupHelpSeen()
                         }
                     }
@@ -138,22 +129,22 @@ struct SettingsSectionsView: View {
 
                 if showsAdvancedLLMControls, settings.isLLMPostProcessingEnabled {
                     if model.isOllamaInstalled, model.preparedLLMModel != nil {
-                        Text("Uses \(LocalLLMModel.cleanupModel.label) for local cleanup.")
+                        Text(L10n.format("settings.llm.uses_model", LocalLLMModel.cleanupModel.label))
                             .font(.system(size: 11, weight: .regular, design: .rounded))
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
 
-                        Button("Remove downloaded model") {
+                        Button(L10n.tr("settings.llm.remove_downloaded_model")) {
                             model.removeDownloadedLLM()
                         }
                         .disabled(model.isPreparingLLM)
                     } else if model.isOllamaInstalled {
-                        Text("No local model is ready yet. Enable Local LLM to prepare \(LocalLLMModel.cleanupModel.label).")
+                        Text(L10n.format("settings.llm.no_local_model", LocalLLMModel.cleanupModel.label))
                             .font(.system(size: 11, weight: .regular, design: .rounded))
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     } else {
-                        Text("Install Ollama to use local cleanup.")
+                        Text(L10n.tr("settings.llm.install_ollama"))
                             .font(.system(size: 11, weight: .regular, design: .rounded))
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -166,9 +157,9 @@ struct SettingsSectionsView: View {
     private var modeExplanationText: String {
         switch settings.outputMode {
         case .normal:
-            return "Normal saves simple text or markdown. In markdown it writes a plain title, a date line, and the note body."
+            return L10n.tr("settings.mode.explanation.normal")
         case .obsidian:
-            return "Obsidian still saves plain markdown, but adds a created frontmatter field so the note fits naturally inside a vault."
+            return L10n.tr("settings.mode.explanation.obsidian")
         }
     }
 

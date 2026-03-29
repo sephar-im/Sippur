@@ -11,13 +11,13 @@ struct ShortcutRecorderView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Button(isRecording ? "Press Shortcut…" : shortcutDisplayName) {
+            Button(isRecording ? L10n.tr("shortcut.press") : shortcutDisplayName) {
                 toggleRecording()
             }
             .buttonStyle(.bordered)
 
             if isRecording {
-                Text("Use Command, Shift, Option, or Control with a key.")
+                Text(L10n.tr("shortcut.help"))
                     .font(.system(size: 11, weight: .regular, design: .rounded))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

@@ -3,10 +3,10 @@ import AppKit
 
 @MainActor
 final class AppModel: ObservableObject {
-    private let idleStatusText = "Click the circle to capture a note."
-    private let idleDetailText = "Speak, click again to finish, and the text note will save automatically."
-    private let recoverableErrorDetailText = "The app stayed stable. Click the circle to try again."
-    private let bootstrapFailureDetailText = "Local transcription setup did not finish. Retry setup to keep the app ready for fast capture."
+    private let idleStatusText = L10n.tr("app.idle.status")
+    private let idleDetailText = L10n.tr("app.idle.detail")
+    private let recoverableErrorDetailText = L10n.tr("app.recoverable_error_detail")
+    private let bootstrapFailureDetailText = L10n.tr("app.bootstrap_failure_detail")
 
     @Published private(set) var phase: CapturePhase = .idle
     @Published private(set) var statusText: String
@@ -15,7 +15,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var isCaptureReady = false
     @Published private(set) var isBootstrappingDependencies = false
     @Published private(set) var hasBlockingSetupFailure = false
-    @Published private(set) var llmStatusText = "LLM cleanup is disabled."
+    @Published private(set) var llmStatusText = L10n.tr("app.llm.disabled")
     @Published private(set) var isPreparingLLM = false
     @Published private(set) var isOllamaInstalled = false
     @Published private(set) var preparedLLMModel: LocalLLMModel?
@@ -51,8 +51,12 @@ final class AppModel: ObservableObject {
         }
 
         if settings.isLLMPostProcessingEnabled {
-            llmStatusText = "\(LocalLLMModel.cleanupModel.label) setup will start after transcription is ready."
+            llmStatusText = L10n.format("app.llm.setup_after_transcription", LocalLLMModel.cleanupModel.label)
         }
+    }
+
+    var isLLMReady: Bool {
+        preparedLLMModel != nil
     }
 
     func requestCaptureToggle() {
@@ -87,13 +91,13 @@ final class AppModel: ObservableObject {
     func setLLMPostProcessingEnabled(_ isEnabled: Bool) {
         settings.isLLMPostProcessingEnabled = isEnabled
         if !isEnabled {
-            llmStatusText = "LLM cleanup is disabled."
+            llmStatusText = L10n.tr("app.llm.disabled")
             isPreparingLLM = false
             return
         }
 
         guard isCaptureReady else {
-            llmStatusText = "\(LocalLLMModel.cleanupModel.label) setup will start after transcription is ready."
+            llmStatusText = L10n.format("app.llm.setup_after_transcription", LocalLLMModel.cleanupModel.label)
             return
         }
 
@@ -146,7 +150,7 @@ final class AppModel: ObservableObject {
 
         let permissionGranted = await recordingService.requestPermission()
         guard permissionGranted else {
-            transitionToError("Microphone access was denied. Allow it in System Settings > Privacy & Security > Microphone.")
+            transitionToError(L10n.tr("app.error.microphone_denied"))
             return
         }
 
@@ -154,8 +158,8 @@ final class AppModel: ObservableObject {
             _ = try recordingService.startRecording()
             clearSessionArtifacts()
             phase = .recording
-            statusText = "Listening."
-            detailText = "Speak and click again to finish."
+            statusText = L10n.tr("app.status.listening")
+            detailText = L10n.tr("app.detail.speak_finish")
         } catch {
             transitionToError(error.localizedDescription)
         }
@@ -163,8 +167,8 @@ final class AppModel: ObservableObject {
 
     private func stopRecording() async {
         phase = .processing
-        statusText = "Processing note."
-        detailText = "Transcribing locally."
+        statusText = L10n.tr("app.status.processing_note")
+        detailText = L10n.tr("app.detail.transcribing_locally")
 
         do {
             let recordingURL = try await recordingService.stopRecording()
@@ -172,8 +176,8 @@ final class AppModel: ObservableObject {
                 cleanupTemporaryAudio(at: recordingURL)
             }
 
-            statusText = "Transcribing locally with Whisper."
-            detailText = "Turning speech into text."
+            statusText = L10n.tr("app.status.transcribing_whisper")
+            detailText = L10n.tr("app.detail.turning_speech_into_text")
 
             let transcription = try await transcriptionService.transcribeAudio(at: recordingURL)
             var noteContent = NoteContent.whisperOnly(body: transcription)
@@ -195,17 +199,17 @@ final class AppModel: ObservableObject {
                         }
                     )
                     preparedLLMModel = .cleanupModel
-                    llmStatusText = "LLM ready (\(LocalLLMModel.cleanupModel.label))."
+                    llmStatusText = L10n.format("app.llm.ready_model", LocalLLMModel.cleanupModel.label)
                 } catch {
                     usedLLMFallback = true
                     noteContent = .whisperOnly(body: transcription)
                     preparedLLMModel = nil
-                    llmStatusText = "LLM unavailable. Whisper-only fallback will be used."
+                    llmStatusText = L10n.tr("app.llm.unavailable_fallback")
                 }
             }
 
             isPreparingLLM = false
-            statusText = "Saving transcribed note."
+            statusText = L10n.tr("app.status.saving_note")
             detailText = settings.outputFolderURL.path
 
             let noteURL = try noteExporter.saveNote(
@@ -222,12 +226,12 @@ final class AppModel: ObservableObject {
             phase = .success
             if usedLLMFallback {
                 statusText = settings.copySavedNoteToClipboard
-                    ? "Saved \(noteURL.lastPathComponent) and copied the text."
-                    : "Saved \(noteURL.lastPathComponent). Used Whisper transcription only."
+                    ? L10n.format("app.status.saved_and_copied", noteURL.lastPathComponent)
+                    : L10n.format("app.status.saved_whisper_only", noteURL.lastPathComponent)
             } else {
                 statusText = settings.copySavedNoteToClipboard
-                    ? "Saved \(noteURL.lastPathComponent) and copied the text."
-                    : "Saved \(noteURL.lastPathComponent)."
+                    ? L10n.format("app.status.saved_and_copied", noteURL.lastPathComponent)
+                    : L10n.format("app.status.saved", noteURL.lastPathComponent)
             }
             detailText = noteURL.path
             settings.markFirstUseHelpSeen()
@@ -266,8 +270,8 @@ final class AppModel: ObservableObject {
         isBootstrappingDependencies = true
         hasBlockingSetupFailure = false
         phase = .processing
-        statusText = "Preparing local transcription."
-        detailText = "Checking Whisper assets."
+        statusText = L10n.tr("app.status.preparing_local_transcription")
+        detailText = L10n.tr("app.detail.checking_whisper_assets")
 
         do {
             try await transcriptionService.prepare(
@@ -308,7 +312,7 @@ final class AppModel: ObservableObject {
 
     private func prepareLLMIfNeeded() async {
         guard settings.llmPostProcessingSettings.isEnabled else {
-            llmStatusText = "LLM cleanup is disabled."
+            llmStatusText = L10n.tr("app.llm.disabled")
             isPreparingLLM = false
             return
         }
@@ -325,10 +329,10 @@ final class AppModel: ObservableObject {
                 }
             )
             self.preparedLLMModel = preparedModel
-            llmStatusText = "LLM ready (\(preparedModel.label))."
+            llmStatusText = L10n.format("app.llm.ready_model", preparedModel.label)
         } catch {
             preparedLLMModel = nil
-            llmStatusText = "LLM unavailable. Whisper-only fallback will be used."
+            llmStatusText = L10n.tr("app.llm.unavailable_fallback")
         }
 
         isPreparingLLM = false
@@ -347,7 +351,7 @@ final class AppModel: ObservableObject {
             )
             preparedLLMModel = nil
             settings.isLLMPostProcessingEnabled = false
-            llmStatusText = "Removed \(removedModel.label). LLM cleanup is disabled."
+            llmStatusText = L10n.format("app.llm.removed_and_disabled", removedModel.label)
         } catch {
             llmStatusText = error.localizedDescription
         }

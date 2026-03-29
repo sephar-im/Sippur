@@ -8,10 +8,10 @@ struct MenuBarContentView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Sepharim Sippur")
+            Text(L10n.tr("menu.title"))
                 .font(.system(size: 15, weight: .semibold, design: .rounded))
 
-            Text("State: \(model.phase.title)")
+            Text(L10n.format("menu.state", model.phase.title))
                 .font(.system(size: 11, weight: .medium, design: .rounded))
                 .foregroundStyle(.secondary)
 
@@ -36,7 +36,7 @@ struct MenuBarContentView: View {
                         .fixedSize(horizontal: false, vertical: true)
 
                     if model.hasBlockingSetupFailure {
-                        Button("Retry Setup") {
+                        Button(L10n.tr("menu.retry_setup")) {
                             model.retryDependencyBootstrap()
                         }
                     }
@@ -57,15 +57,15 @@ struct MenuBarContentView: View {
             if settings.isLLMPostProcessingEnabled,
                model.isCaptureReady,
                !model.isPreparingLLM,
-               !model.llmStatusText.hasPrefix("LLM ready") {
-                Button("Retry LLM Setup") {
+               !model.isLLMReady {
+                Button(L10n.tr("menu.retry_llm_setup")) {
                     model.retryLLMSetup()
                 }
             }
 
             Divider()
 
-            Button("Quit") {
+            Button(L10n.tr("menu.quit")) {
                 NSApp.terminate(nil)
             }
         }

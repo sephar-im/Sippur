@@ -34,11 +34,11 @@ final class OllamaPostProcessingService: LLMPostProcessingServicing {
         var errorDescription: String? {
             switch self {
             case .ollamaNotInstalled:
-                return "Ollama is not installed. Install Ollama to enable local LLM cleanup."
+                return L10n.tr("llm.error.not_installed")
             case .ollamaUnavailable:
-                return "Ollama is installed but unavailable. Open Ollama and try again."
+                return L10n.tr("llm.error.unavailable")
             case .invalidResponse:
-                return "The local LLM returned an unreadable response."
+                return L10n.tr("llm.error.invalid_response")
             case .generationFailed(let message):
                 return message
             }
@@ -116,22 +116,22 @@ final class OllamaPostProcessingService: LLMPostProcessingServicing {
         let selectedModel = cleanupModel
 
         if preparedModel == selectedModel, (try? await fetchVersion()) != nil {
-            progress("LLM ready.", nil)
+            progress(L10n.tr("llm.progress.ready"), nil)
             return selectedModel
         }
 
-        progress("Checking Ollama.", nil)
+        progress(L10n.tr("llm.progress.checking_ollama"), nil)
         let installation = try locateInstallation()
         try await ensureOllamaIsReachable(using: installation, progress: progress)
 
-        progress("Checking local model.", nil)
+        progress(L10n.tr("llm.progress.checking_local_model"), nil)
         if try await !isModelAvailable(selectedModel) {
-            progress("Downloading local model.", "This can take a while the first time.")
+            progress(L10n.tr("llm.progress.downloading_local_model"), L10n.tr("llm.progress.downloading_local_model_first_time"))
             try await pullModel(selectedModel, progress: progress)
         }
 
         preparedModel = selectedModel
-        progress("LLM ready.", nil)
+        progress(L10n.tr("llm.progress.ready"), nil)
         return selectedModel
     }
 
@@ -141,7 +141,7 @@ final class OllamaPostProcessingService: LLMPostProcessingServicing {
     ) async throws -> LocalLLMModel {
         let selectedModel = cleanupModel
 
-        progress("Checking Ollama.", nil)
+        progress(L10n.tr("llm.progress.checking_ollama"), nil)
         let installation = try locateInstallation()
         try await ensureOllamaIsReachable(using: installation, progress: progress)
 
@@ -149,11 +149,11 @@ final class OllamaPostProcessingService: LLMPostProcessingServicing {
             if preparedModel == selectedModel {
                 preparedModel = nil
             }
-            progress("No downloaded LLM to remove.", nil)
+            progress(L10n.tr("llm.progress.no_downloaded_model"), nil)
             return selectedModel
         }
 
-        progress("Removing downloaded LLM.", selectedModel.rawValue)
+        progress(L10n.tr("llm.progress.removing_model"), selectedModel.rawValue)
         try await runOllamaCommand(
             executableURL: installation.executableURL,
             arguments: ["rm", selectedModel.rawValue]
@@ -161,7 +161,7 @@ final class OllamaPostProcessingService: LLMPostProcessingServicing {
         if preparedModel == selectedModel {
             preparedModel = nil
         }
-        progress("Downloaded LLM removed.", nil)
+        progress(L10n.tr("llm.progress.downloaded_removed"), nil)
         return selectedModel
     }
 
@@ -172,7 +172,7 @@ final class OllamaPostProcessingService: LLMPostProcessingServicing {
         progress: @escaping @MainActor (String, String?) -> Void
     ) async throws -> NoteContent {
         let model = try await prepare(settings: llmSettings, progress: progress)
-        progress("Cleaning transcription locally.", nil)
+        progress(L10n.tr("llm.progress.cleaning_transcription"), nil)
 
         let request = GenerateRequest(
             model: model.rawValue,
@@ -266,7 +266,7 @@ final class OllamaPostProcessingService: LLMPostProcessingServicing {
         }
 
         if let appURL = installation.appURL {
-            progress("Starting Ollama.", nil)
+            progress(L10n.tr("llm.progress.starting_ollama"), nil)
             try await launchOllamaApp(at: appURL)
             if (try? await pollForVersion()) != nil {
                 return
@@ -363,7 +363,7 @@ final class OllamaPostProcessingService: LLMPostProcessingServicing {
                 detail = nil
             }
 
-            progress(chunk.status ?? "Downloading local model.", detail)
+            progress(chunk.status ?? L10n.tr("llm.progress.downloading_local_model"), detail)
         }
     }
 
@@ -468,7 +468,7 @@ final class OllamaPostProcessingService: LLMPostProcessingServicing {
                     continuation.resume(
                         throwing: OllamaPostProcessingError.generationFailed(
                             output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                                ? "Ollama could not remove the selected model."
+                                ? L10n.tr("llm.error.remove_failed")
                                 : output.trimmingCharacters(in: .whitespacesAndNewlines)
                         )
                     )

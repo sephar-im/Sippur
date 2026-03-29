@@ -10,10 +10,10 @@ struct SettingsWindowView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Settings")
+                    Text(L10n.tr("settings.title"))
                         .font(.system(size: 22, weight: .semibold, design: .rounded))
 
-                    Text("Control where notes are saved, how they are formatted, and whether optional local cleanup is used.")
+                    Text(L10n.tr("settings.subtitle"))
                         .font(.system(size: 12, weight: .regular, design: .rounded))
                         .foregroundStyle(.secondary)
                 }

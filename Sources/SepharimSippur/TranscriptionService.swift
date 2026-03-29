@@ -23,17 +23,17 @@ final class WhisperTranscriptionService: TranscriptionServicing {
         var errorDescription: String? {
             switch self {
             case .modelNotFound(let modelURL):
-                return "Whisper model not found at \(modelURL.path). Retry setup to install it."
+                return L10n.format("transcription.error.model_not_found", modelURL.path)
             case .modelDownloadFailed(let message):
                 return message
             case .invalidModelDownload(let modelURL):
-                return "The Whisper model download was incomplete. Retry setup to install a fresh copy at \(modelURL.path)."
+                return L10n.format("transcription.error.invalid_model_download", modelURL.path)
             case .unreadableAudio:
-                return "The recorded audio could not be read for transcription."
+                return L10n.tr("transcription.error.unreadable_audio")
             case .unsupportedAudioFormat:
-                return "The recorded audio must be 16kHz mono PCM for Whisper transcription."
+                return L10n.tr("transcription.error.unsupported_audio")
             case .emptyTranscription:
-                return "Whisper finished, but no transcription text was produced."
+                return L10n.tr("transcription.error.empty")
             case .whisperFailed(let message):
                 return message
             }
@@ -60,16 +60,16 @@ final class WhisperTranscriptionService: TranscriptionServicing {
     }
 
     func prepare(progress: @escaping @MainActor (String, String?) -> Void) async throws {
-        progress("Checking local transcription.", modelURL.lastPathComponent)
+        progress(L10n.tr("transcription.progress.checking_local"), modelURL.lastPathComponent)
 
         if hasInstalledModel() {
-            progress("Local transcription ready.", modelURL.lastPathComponent)
+            progress(L10n.tr("transcription.progress.ready"), modelURL.lastPathComponent)
             return
         }
 
-        progress("Downloading Whisper model.", "This happens once.")
+        progress(L10n.tr("transcription.progress.downloading_model"), L10n.tr("transcription.progress.happens_once"))
         try await downloadModel(progress: progress)
-        progress("Local transcription ready.", modelURL.lastPathComponent)
+        progress(L10n.tr("transcription.progress.ready"), modelURL.lastPathComponent)
     }
 
     func transcribeAudio(at audioURL: URL) async throws -> String {
@@ -136,7 +136,7 @@ final class WhisperTranscriptionService: TranscriptionServicing {
             try validateDownloadResponse(response)
 
             guard let fileHandle = try? FileHandle(forWritingTo: temporaryURL) else {
-                throw TranscriptionError.modelDownloadFailed("The Whisper model could not be saved locally. Check disk space and retry setup.")
+                throw TranscriptionError.modelDownloadFailed(L10n.tr("transcription.error.download_failed_disk"))
             }
 
             defer {
@@ -154,14 +154,14 @@ final class WhisperTranscriptionService: TranscriptionServicing {
                     try fileHandle.write(contentsOf: buffer)
                     receivedBytes += Int64(buffer.count)
                     buffer.removeAll(keepingCapacity: true)
-                    progress("Downloading Whisper model.", downloadDetail(receivedBytes: receivedBytes, totalBytes: totalBytes))
+                    progress(L10n.tr("transcription.progress.downloading_model"), downloadDetail(receivedBytes: receivedBytes, totalBytes: totalBytes))
                 }
             }
 
             if !buffer.isEmpty {
                 try fileHandle.write(contentsOf: buffer)
                 receivedBytes += Int64(buffer.count)
-                progress("Downloading Whisper model.", downloadDetail(receivedBytes: receivedBytes, totalBytes: totalBytes))
+                progress(L10n.tr("transcription.progress.downloading_model"), downloadDetail(receivedBytes: receivedBytes, totalBytes: totalBytes))
             }
 
             if receivedBytes <= 0 {
@@ -182,20 +182,20 @@ final class WhisperTranscriptionService: TranscriptionServicing {
             throw error
         } catch {
             try? fileManager.removeItem(at: temporaryURL)
-            throw TranscriptionError.modelDownloadFailed("Whisper setup failed while downloading the local model. Check your connection and retry setup.")
+            throw TranscriptionError.modelDownloadFailed(L10n.tr("transcription.error.download_failed_connection"))
         }
     }
 
     private func validateDownloadResponse(_ response: URLResponse) throws {
         guard let httpResponse = response as? HTTPURLResponse,
               (200..<300).contains(httpResponse.statusCode) else {
-            throw TranscriptionError.modelDownloadFailed("Whisper setup failed because the model download endpoint was unavailable.")
+            throw TranscriptionError.modelDownloadFailed(L10n.tr("transcription.error.download_unavailable"))
         }
     }
 
     private func downloadDetail(receivedBytes: Int64, totalBytes: Int64) -> String? {
         guard totalBytes > 0 else {
-            return "Preparing local model."
+            return L10n.tr("transcription.error.preparing_local_model")
         }
 
         let percentage = Int((Double(receivedBytes) / Double(totalBytes)) * 100)

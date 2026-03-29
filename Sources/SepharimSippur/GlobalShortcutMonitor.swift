@@ -149,13 +149,13 @@ final class GlobalShortcutMonitor {
 
         switch Int(event.keyCode) {
         case kVK_Space:
-            return "Space"
+            return L10n.tr("global_shortcut.key.space")
         case kVK_Return:
-            return "Return"
+            return L10n.tr("global_shortcut.key.return")
         case kVK_Delete:
-            return "Delete"
+            return L10n.tr("global_shortcut.key.delete")
         case kVK_Escape:
-            return "Escape"
+            return L10n.tr("global_shortcut.key.escape")
         default:
             return ""
         }
@@ -165,16 +165,16 @@ final class GlobalShortcutMonitor {
         var labels: [String] = []
 
         if modifiers.contains(.command) {
-            labels.append("Command")
+            labels.append(L10n.tr("global_shortcut.mod.command"))
         }
         if modifiers.contains(.shift) {
-            labels.append("Shift")
+            labels.append(L10n.tr("global_shortcut.mod.shift"))
         }
         if modifiers.contains(.option) {
-            labels.append("Option")
+            labels.append(L10n.tr("global_shortcut.mod.option"))
         }
         if modifiers.contains(.control) {
-            labels.append("Control")
+            labels.append(L10n.tr("global_shortcut.mod.control"))
         }
 
         return labels.joined(separator: "-")

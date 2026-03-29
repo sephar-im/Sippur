@@ -50,6 +50,7 @@
 "menu.retry_setup" = "Reintentar preparación";
 "menu.state" = "Estado: %@";
 "menu.title" = "Sepharim Sippur";
+"note_export.date_label" = "Fecha";
 "note_export.default_title" = "Nota de voz";
 "note_export.error.path_not_folder" = "La ruta de salida seleccionada no es una carpeta: %@";
 "note_export.error.unique_filename" = "No se pudo crear un nombre de nota único en %@.";
@@ -65,9 +66,6 @@
 "recording.error.finalize_failed" = "No se pudo finalizar la grabación.";
 "recording.error.not_recording" = "No hay ninguna grabación en curso.";
 "recording.error.stop_already_in_progress" = "La grabación actual ya se está deteniendo.";
-"settings.capture.size" = "Tamaño";
-"settings.capture.size.normal" = "Normal";
-"settings.capture.size.small" = "Pequeño";
 "settings.first_use.body" = "Pulsa el círculo para iniciar y detener. La nota se transcribe en local y se guarda como texto en la carpeta elegida.";
 "settings.first_use.title" = "¿Primera vez aquí?";
 "settings.got_it" = "Entendido";
@@ -87,7 +85,6 @@
 "settings.notes.mode" = "Modo";
 "settings.notes.open_folder" = "Abrir carpeta";
 "settings.notes.reveal_last_saved_note" = "Mostrar la última nota guardada";
-"settings.section.capture" = "Captura";
 "settings.section.llm" = "LLM local";
 "settings.section.notes" = "Notas";
 "settings.section.shortcut" = "Atajo";

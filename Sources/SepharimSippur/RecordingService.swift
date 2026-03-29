@@ -22,15 +22,15 @@ final class RecordingService: NSObject, RecordingServicing, @preconcurrency AVAu
         var errorDescription: String? {
             switch self {
             case .alreadyRecording:
-                return "A recording is already in progress."
+                return L10n.tr("recording.error.already_recording")
             case .stopAlreadyInProgress:
-                return "The current recording is already stopping."
+                return L10n.tr("recording.error.stop_already_in_progress")
             case .notRecording:
-                return "There is no recording in progress."
+                return L10n.tr("recording.error.not_recording")
             case .couldNotStart:
-                return "The microphone recording could not be started."
+                return L10n.tr("recording.error.could_not_start")
             case .finalizeFailed:
-                return "The recording could not be finalized."
+                return L10n.tr("recording.error.finalize_failed")
             }
         }
     }

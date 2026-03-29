@@ -155,7 +155,7 @@ final class SepharimSippurTests: XCTestCase {
         let model = AppModel(settings: makeTestSettingsStore(suiteName: suiteName, reset: true), recordingService: MockRecordingService())
 
         XCTAssertEqual(model.phase, .idle)
-        XCTAssertEqual(model.statusText, "Click the circle to capture a note.")
+        XCTAssertEqual(model.statusText, L10n.tr("app.idle.status"))
     }
 
     @MainActor
@@ -202,17 +202,6 @@ final class SepharimSippurTests: XCTestCase {
 
         let reloadedStore = makeTestSettingsStore(suiteName: suiteName)
         XCTAssertTrue(reloadedStore.copySavedNoteToClipboard)
-    }
-
-    @MainActor
-    func testSettingsPersistCaptureControlSize() {
-        let suiteName = "SepharimSippurTests.capture-size.\(UUID().uuidString)"
-        let store = makeTestSettingsStore(suiteName: suiteName, reset: true)
-
-        store.captureControlSize = .small
-
-        let reloadedStore = makeTestSettingsStore(suiteName: suiteName)
-        XCTAssertEqual(reloadedStore.captureControlSize, .small)
     }
 
     @MainActor
@@ -289,8 +278,8 @@ final class SepharimSippurTests: XCTestCase {
         )
 
         XCTAssertEqual(draft.fileName, "1970-01-01 00-00-00.md")
-        XCTAssertTrue(draft.contents.contains("# Voice Note"))
-        XCTAssertTrue(draft.contents.contains("Date: 1970-01-01 00:00:00"))
+        XCTAssertTrue(draft.contents.contains("# \(L10n.tr("note_export.default_title"))"))
+        XCTAssertTrue(draft.contents.contains("\(L10n.tr("note_export.date_label")): 1970-01-01 00:00:00"))
         XCTAssertTrue(draft.contents.contains("Hello from Whisper."))
         XCTAssertFalse(draft.contents.hasPrefix("---\n"))
     }
@@ -326,7 +315,7 @@ final class SepharimSippurTests: XCTestCase {
         XCTAssertThrowsError(try exporter.saveNote(content: .whisperOnly(body: "Hello"), using: settings, date: Date(timeIntervalSince1970: 0))) { error in
             XCTAssertEqual(
                 error.localizedDescription,
-                "The selected output path is not a folder: \(fileURL.path)"
+                L10n.format("note_export.error.path_not_folder", fileURL.path)
             )
         }
     }
@@ -351,7 +340,7 @@ final class SepharimSippurTests: XCTestCase {
         XCTAssertTrue(model.isCaptureReady)
         XCTAssertFalse(model.hasBlockingSetupFailure)
         XCTAssertEqual(model.phase, .idle)
-        XCTAssertEqual(model.statusText, "Click the circle to capture a note.")
+        XCTAssertEqual(model.statusText, L10n.tr("app.idle.status"))
     }
 
     @MainActor
@@ -403,7 +392,7 @@ final class SepharimSippurTests: XCTestCase {
 
         XCTAssertEqual(transcriptionService.prepareCalls, 1)
         XCTAssertEqual(llmService.prepareCalls, 1)
-        XCTAssertEqual(model.llmStatusText, "LLM ready (Qwen 1.5B).")
+        XCTAssertEqual(model.llmStatusText, L10n.format("app.llm.ready_model", LocalLLMModel.cleanupModel.label))
     }
 
     @MainActor
@@ -429,7 +418,7 @@ final class SepharimSippurTests: XCTestCase {
         XCTAssertEqual(llmService.removedModel, .qwen25_15b)
         XCTAssertNil(model.preparedLLMModel)
         XCTAssertFalse(settings.isLLMPostProcessingEnabled)
-        XCTAssertEqual(model.llmStatusText, "Removed Qwen 1.5B. LLM cleanup is disabled.")
+        XCTAssertEqual(model.llmStatusText, L10n.format("app.llm.removed_and_disabled", LocalLLMModel.cleanupModel.label))
     }
 
     @MainActor
@@ -448,7 +437,7 @@ final class SepharimSippurTests: XCTestCase {
         await model.performCaptureToggle()
 
         XCTAssertEqual(model.phase, .recording)
-        XCTAssertEqual(model.statusText, "Listening.")
+        XCTAssertEqual(model.statusText, L10n.tr("app.status.listening"))
         XCTAssertEqual(service.startCalls, 1)
         XCTAssertEqual(service.stopCalls, 0)
     }
@@ -475,7 +464,7 @@ final class SepharimSippurTests: XCTestCase {
         await model.performCaptureToggle()
 
         XCTAssertEqual(model.phase, .success)
-        XCTAssertEqual(model.statusText, "Saved test-note.md and copied the text.")
+        XCTAssertEqual(model.statusText, L10n.format("app.status.saved_and_copied", "test-note.md"))
         XCTAssertEqual(model.lastSavedNoteURL?.path, "/tmp/test-note.md")
         XCTAssertEqual(service.startCalls, 1)
         XCTAssertEqual(service.stopCalls, 1)
@@ -511,7 +500,7 @@ final class SepharimSippurTests: XCTestCase {
 
         XCTAssertEqual(llmService.postProcessCalls, 1)
         XCTAssertEqual(exporter.lastContent, NoteContent(body: "Cleaned transcription", title: "Cleaned Title"))
-        XCTAssertEqual(model.statusText, "Saved test-note.md.")
+        XCTAssertEqual(model.statusText, L10n.format("app.status.saved", "test-note.md"))
     }
 
     @MainActor
@@ -536,7 +525,7 @@ final class SepharimSippurTests: XCTestCase {
         try? await Task.sleep(nanoseconds: 1_400_000_000)
 
         XCTAssertEqual(model.phase, .idle)
-        XCTAssertEqual(model.statusText, "Click the circle to capture a note.")
+        XCTAssertEqual(model.statusText, L10n.tr("app.idle.status"))
     }
 
     @MainActor
@@ -557,7 +546,7 @@ final class SepharimSippurTests: XCTestCase {
         await model.performCaptureToggle()
 
         XCTAssertEqual(model.phase, .error)
-        XCTAssertTrue(model.statusText.contains("Microphone access was denied"))
+        XCTAssertEqual(model.statusText, L10n.tr("app.error.microphone_denied"))
         XCTAssertEqual(service.startCalls, 0)
     }
 
@@ -632,7 +621,7 @@ final class SepharimSippurTests: XCTestCase {
         await model.performCaptureToggle()
 
         XCTAssertEqual(model.phase, .success)
-        XCTAssertEqual(model.statusText, "Saved test-note.md. Used Whisper transcription only.")
+        XCTAssertEqual(model.statusText, L10n.format("app.status.saved_whisper_only", "test-note.md"))
         XCTAssertEqual(exporter.lastContent, .whisperOnly(body: "Transcribed words"))
         XCTAssertEqual(llmService.postProcessCalls, 1)
     }
@@ -686,7 +675,7 @@ final class SepharimSippurTests: XCTestCase {
         await model.performCaptureToggle()
 
         XCTAssertEqual(model.phase, .error)
-        XCTAssertEqual(model.statusText, "A recording is already in progress.")
+        XCTAssertEqual(model.statusText, L10n.tr("recording.error.already_recording"))
         XCTAssertEqual(service.startCalls, 1)
     }
 }

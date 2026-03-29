@@ -74,6 +74,11 @@ cp "$EXECUTABLE_SOURCE" "$APP_MACOS/$EXECUTABLE_NAME"
 chmod +x "$APP_MACOS/$EXECUTABLE_NAME"
 cp "$MENU_BAR_ICON_LIGHT_SOURCE" "$APP_RESOURCES/sippur_bar_lightmode.svg"
 cp "$MENU_BAR_ICON_DARK_SOURCE" "$APP_RESOURCES/sippur_bar_darkmode.svg"
+
+while IFS= read -r -d '' resource_bundle; do
+  cp -R "$resource_bundle" "$APP_RESOURCES/"
+done < <(find "$BIN_DIR" -maxdepth 1 -name '*.bundle' -print0)
+
 xattr -cr "$APP_BUNDLE" 2>/dev/null || true
 
 echo "Generating app icon..."

@@ -5,7 +5,7 @@ struct SepharimSippurCommands: Commands {
 
     var body: some Commands {
         CommandGroup(replacing: .appInfo) {
-            Button("About Sepharim Sippur") {
+            Button(L10n.tr("commands.about")) {
                 openWindow(id: "about")
             }
         }

@@ -50,6 +50,7 @@
 "menu.retry_setup" = "Retry Setup";
 "menu.state" = "State: %@";
 "menu.title" = "Sepharim Sippur";
+"note_export.date_label" = "Date";
 "note_export.default_title" = "Voice Note";
 "note_export.error.path_not_folder" = "The selected output path is not a folder: %@";
 "note_export.error.unique_filename" = "A unique note filename could not be created in %@.";
@@ -65,9 +66,6 @@
 "recording.error.finalize_failed" = "The recording could not be finalized.";
 "recording.error.not_recording" = "There is no recording in progress.";
 "recording.error.stop_already_in_progress" = "The current recording is already stopping.";
-"settings.capture.size" = "Size";
-"settings.capture.size.normal" = "Normal";
-"settings.capture.size.small" = "Small";
 "settings.first_use.body" = "Click the circle to start and stop. The note is transcribed locally and saved as text in the selected folder.";
 "settings.first_use.title" = "First time here?";
 "settings.got_it" = "Got It";
@@ -87,7 +85,6 @@
 "settings.notes.mode" = "Mode";
 "settings.notes.open_folder" = "Open folder";
 "settings.notes.reveal_last_saved_note" = "Reveal last saved note";
-"settings.section.capture" = "Capture";
 "settings.section.llm" = "Local LLM";
 "settings.section.notes" = "Notes";
 "settings.section.shortcut" = "Shortcut";
