@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="https://raw.githubusercontent.com/sephar-im/Sippur/refs/heads/main/logo_sepharim.png" alt="Cabecera" width="800">
+</p>
+
 # Sepharim Sippur
 
 Sepharim Sippur is a native macOS app for ultra-fast voice-to-text note capture.
