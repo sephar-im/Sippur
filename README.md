@@ -18,20 +18,6 @@ Click the circle or use a shortcut, speak, stop, and get a local text note saved
 - Menu bar settings, no heavy preferences UI
 - Automatic UI language based on the system language
 
-## Product Boundaries
-
-Sepharim Sippur is intentionally small.
-
-It is not:
-
-- a notes library
-- a knowledge base
-- a meeting assistant
-- a chat app
-- a general AI workspace
-
-The goal is simple: capture speech quickly and turn it into a saved text note with as little friction as possible.
-
 ## How It Works
 
 1. Start capture by clicking the circle or using your configured shortcut.
