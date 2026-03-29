@@ -4,7 +4,7 @@ import AppKit
 struct MenuBarContentView: View {
     @ObservedObject var model: AppModel
     @ObservedObject var settings: SettingsStore
-    let showCaptureWindow: () -> Void
+    let setGlobalShortcut: (GlobalShortcutMonitor.Shortcut?) -> Void
 
     private var llmEnabledBinding: Binding<Bool> {
         Binding(
@@ -18,15 +18,7 @@ struct MenuBarContentView: View {
             Text("Sepharim Sippur")
                 .font(.system(size: 15, weight: .semibold, design: .rounded))
 
-            Button("Show Capture Window") {
-                showCaptureWindow()
-            }
-
             Text("State: \(model.phase.title)")
-                .font(.system(size: 12, weight: .medium, design: .rounded))
-                .foregroundStyle(.secondary)
-
-            Text("Shortcut: \(GlobalShortcutMonitor.defaultShortcutDisplayName)")
                 .font(.system(size: 12, weight: .medium, design: .rounded))
                 .foregroundStyle(.secondary)
 
@@ -105,6 +97,22 @@ struct MenuBarContentView: View {
                     }
                 }
                 .pickerStyle(.segmented)
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Shortcut")
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+
+                ShortcutRecorderView(
+                    shortcutDisplayName: settings.globalShortcutDisplayName,
+                    onShortcutChange: setGlobalShortcut
+                )
+
+                if settings.globalShortcut != nil {
+                    Button("Clear Shortcut") {
+                        setGlobalShortcut(nil)
+                    }
+                }
             }
 
             VStack(alignment: .leading, spacing: 8) {

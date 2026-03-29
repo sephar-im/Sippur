@@ -10,6 +10,9 @@ final class SettingsStore: ObservableObject {
         static let llmPostProcessingEnabled = "llmPostProcessingEnabled"
         static let llmGeneratesTitle = "llmGeneratesTitle"
         static let llmAddsObsidianWikilinks = "llmAddsObsidianWikilinks"
+        static let shortcutKeyCode = "shortcutKeyCode"
+        static let shortcutCarbonModifiers = "shortcutCarbonModifiers"
+        static let shortcutDisplayName = "shortcutDisplayName"
     }
 
     @Published var outputFormat: OutputFormat {
@@ -25,6 +28,7 @@ final class SettingsStore: ObservableObject {
     }
 
     @Published private(set) var outputFolderURL: URL
+    @Published private(set) var globalShortcut: GlobalShortcutMonitor.Shortcut?
 
     @Published var isLLMPostProcessingEnabled: Bool {
         didSet {
@@ -61,6 +65,17 @@ final class SettingsStore: ObservableObject {
         outputFolderURL = storedPath.map(URL.init(fileURLWithPath:)) ?? defaultFolder
         outputFormat = OutputFormat(rawValue: userDefaults.string(forKey: Keys.outputFormat) ?? "") ?? .md
         outputMode = OutputMode(rawValue: userDefaults.string(forKey: Keys.outputMode) ?? "") ?? .normal
+        if let storedKeyCode = userDefaults.object(forKey: Keys.shortcutKeyCode) as? NSNumber,
+           let storedModifiers = userDefaults.object(forKey: Keys.shortcutCarbonModifiers) as? NSNumber,
+           let storedDisplayName = userDefaults.string(forKey: Keys.shortcutDisplayName) {
+            globalShortcut = GlobalShortcutMonitor.Shortcut(
+                keyCode: storedKeyCode.uint32Value,
+                carbonModifiers: storedModifiers.uint32Value,
+                displayName: storedDisplayName
+            )
+        } else {
+            globalShortcut = nil
+        }
         isLLMPostProcessingEnabled = userDefaults.bool(forKey: Keys.llmPostProcessingEnabled)
         llmGeneratesTitle = userDefaults.bool(forKey: Keys.llmGeneratesTitle)
         llmAddsObsidianWikilinks = userDefaults.bool(forKey: Keys.llmAddsObsidianWikilinks)
@@ -79,6 +94,10 @@ final class SettingsStore: ObservableObject {
 
     var outputFolderPath: String {
         outputFolderURL.path
+    }
+
+    var globalShortcutDisplayName: String {
+        globalShortcut?.displayName ?? "Not set"
     }
 
     var llmPostProcessingSettings: LLMPostProcessingSettings {
@@ -113,6 +132,20 @@ final class SettingsStore: ObservableObject {
     func openOutputFolder() {
         ensureOutputFolderExists()
         NSWorkspace.shared.open(outputFolderURL)
+    }
+
+    func setGlobalShortcut(_ shortcut: GlobalShortcutMonitor.Shortcut?) {
+        globalShortcut = shortcut
+
+        if let shortcut {
+            userDefaults.set(shortcut.keyCode, forKey: Keys.shortcutKeyCode)
+            userDefaults.set(shortcut.carbonModifiers, forKey: Keys.shortcutCarbonModifiers)
+            userDefaults.set(shortcut.displayName, forKey: Keys.shortcutDisplayName)
+        } else {
+            userDefaults.removeObject(forKey: Keys.shortcutKeyCode)
+            userDefaults.removeObject(forKey: Keys.shortcutCarbonModifiers)
+            userDefaults.removeObject(forKey: Keys.shortcutDisplayName)
+        }
     }
 
     private func ensureOutputFolderExists() {

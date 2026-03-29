@@ -26,6 +26,7 @@ public struct SepharimSippurRootScene: Scene {
             ApplicationIconLoader.applyAppIcon()
             capturePanelController.installIfNeeded(model: model)
             capturePanelController.showCaptureWindow()
+            shortcutMonitor.updateShortcut(settings.globalShortcut)
             shortcutMonitor.startIfNeeded()
             Task { @MainActor in
                 await model.bootstrapDependenciesOnLaunch()
@@ -38,7 +39,10 @@ public struct SepharimSippurRootScene: Scene {
             MenuBarContentView(
                 model: model,
                 settings: settings,
-                showCaptureWindow: capturePanelController.showCaptureWindow
+                setGlobalShortcut: { shortcut in
+                    settings.setGlobalShortcut(shortcut)
+                    shortcutMonitor.updateShortcut(shortcut)
+                }
             )
         }
         .menuBarExtraStyle(.window)

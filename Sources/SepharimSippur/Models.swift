@@ -26,9 +26,9 @@ enum CapturePhase: Equatable {
     var accentColor: Color {
         switch self {
         case .idle:
-            return Color(red: 0.52, green: 0.60, blue: 0.68)
+            return Color(red: 0.89, green: 0.20, blue: 0.24)
         case .recording:
-            return Color(red: 0.89, green: 0.24, blue: 0.29)
+            return Color(red: 0.94, green: 0.16, blue: 0.20)
         case .processing:
             return Color(red: 0.88, green: 0.63, blue: 0.19)
         case .success:

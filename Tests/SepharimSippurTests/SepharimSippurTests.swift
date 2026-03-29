@@ -1,5 +1,6 @@
 import Foundation
 import XCTest
+import Carbon.HIToolbox
 @testable import SepharimSippur
 
 @MainActor
@@ -126,7 +127,7 @@ final class SepharimSippurTests: XCTestCase {
         let model = AppModel(settings: makeTestSettingsStore(suiteName: suiteName, reset: true), recordingService: MockRecordingService())
 
         XCTAssertEqual(model.phase, .idle)
-        XCTAssertEqual(model.statusText, "Click the circle or press Command-Shift-R to start recording.")
+        XCTAssertEqual(model.statusText, "Click the circle to start recording.")
     }
 
     @MainActor
@@ -145,6 +146,23 @@ final class SepharimSippurTests: XCTestCase {
         XCTAssertEqual(reloadedStore.outputFormat, .txt)
         XCTAssertEqual(reloadedStore.outputMode, .obsidian)
         XCTAssertEqual(reloadedStore.outputFolderURL, chosenFolder.standardizedFileURL)
+    }
+
+    @MainActor
+    func testSettingsPersistOptionalShortcut() {
+        let suiteName = "SepharimSippurTests.shortcut.\(UUID().uuidString)"
+        let store = makeTestSettingsStore(suiteName: suiteName, reset: true)
+        let shortcut = GlobalShortcutMonitor.Shortcut(
+            keyCode: UInt32(kVK_ANSI_K),
+            carbonModifiers: UInt32(cmdKey | optionKey),
+            displayName: "Command-Option-K"
+        )
+
+        store.setGlobalShortcut(shortcut)
+
+        let reloadedStore = makeTestSettingsStore(suiteName: suiteName)
+        XCTAssertEqual(reloadedStore.globalShortcut, shortcut)
+        XCTAssertEqual(reloadedStore.globalShortcutDisplayName, "Command-Option-K")
     }
 
     func testTxtDraftUsesSortableFilenameAndPlainTextBody() {
@@ -282,7 +300,7 @@ final class SepharimSippurTests: XCTestCase {
         XCTAssertTrue(model.isCaptureReady)
         XCTAssertFalse(model.hasBlockingSetupFailure)
         XCTAssertEqual(model.phase, .idle)
-        XCTAssertEqual(model.statusText, "Click the circle or press Command-Shift-R to start recording.")
+        XCTAssertEqual(model.statusText, "Click the circle to start recording.")
     }
 
     @MainActor
@@ -415,6 +433,31 @@ final class SepharimSippurTests: XCTestCase {
         XCTAssertEqual(llmService.postProcessCalls, 1)
         XCTAssertEqual(exporter.lastContent, NoteContent(body: "Cleaned transcription", title: "Cleaned Title"))
         XCTAssertEqual(model.statusText, "Saved test-note.md.")
+    }
+
+    @MainActor
+    func testSuccessReturnsToIdleAfterBriefDelay() async {
+        let service = MockRecordingService()
+        let transcriptionService = MockTranscriptionService()
+        let exporter = MockNoteExporter()
+        let suiteName = "SepharimSippurTests.\(UUID().uuidString)"
+        let settings = makeTestSettingsStore(suiteName: suiteName, reset: true)
+        let model = AppModel(
+            settings: settings,
+            recordingService: service,
+            transcriptionService: transcriptionService,
+            noteExporter: exporter
+        )
+
+        await model.bootstrapDependenciesOnLaunch()
+        await model.performCaptureToggle()
+        await model.performCaptureToggle()
+        XCTAssertEqual(model.phase, .success)
+
+        try? await Task.sleep(nanoseconds: 1_400_000_000)
+
+        XCTAssertEqual(model.phase, .idle)
+        XCTAssertEqual(model.statusText, "Click the circle to start recording.")
     }
 
     @MainActor

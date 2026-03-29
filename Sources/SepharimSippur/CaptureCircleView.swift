@@ -3,49 +3,51 @@ import SwiftUI
 struct CaptureCircleView: View {
     let phase: CapturePhase
     let isEnabled: Bool
-    let action: () -> Void
 
     @State private var pulse = false
     @State private var spinRing = false
 
     var body: some View {
-        Button(action: action) {
-            ZStack {
-                Circle()
-                    .fill(
-                        RadialGradient(
-                            colors: [
-                                baseFillColor.opacity(0.98),
-                                baseFillColor.opacity(0.82),
-                                Color.black.opacity(0.92),
-                            ],
-                            center: .center,
-                            startRadius: 10,
-                            endRadius: 96
-                        )
+        ZStack {
+            Circle()
+                .fill(
+                    RadialGradient(
+                        colors: [
+                            baseFillColor.opacity(0.98),
+                            baseFillColor.opacity(0.82),
+                            Color.black.opacity(0.92),
+                        ],
+                        center: .center,
+                        startRadius: 10,
+                        endRadius: 96
                     )
-                    .frame(width: 156, height: 156)
-                    .overlay {
-                        Circle()
-                            .stroke(Color.white.opacity(0.14), lineWidth: 1)
-                    }
-                    .shadow(color: glowColor.opacity(glowOpacity), radius: 22, y: 8)
-                    .scaleEffect(phase.shouldPulse ? (pulse ? 1.03 : 0.97) : 1.0)
+                )
+                .frame(width: 156, height: 156)
+                .overlay {
+                    Circle()
+                        .stroke(Color.white.opacity(0.14), lineWidth: 1)
+                }
+                .shadow(color: glowColor.opacity(glowOpacity), radius: 22, y: 8)
+                .scaleEffect(phase.shouldPulse ? (pulse ? 1.08 : 0.93) : 1.0)
 
-                Circle()
-                    .trim(from: phase.outerRingTrimRange.lowerBound, to: phase.outerRingTrimRange.upperBound)
-                    .stroke(
-                        glowColor.opacity(ringOpacity),
-                        style: StrokeStyle(lineWidth: 10, lineCap: .round)
-                    )
-                    .frame(width: 172, height: 172)
-                    .rotationEffect(.degrees(phase.shouldSpinRing ? (spinRing ? 360 : 0) : 0))
+            Circle()
+                .fill(glowColor.opacity(phase.shouldPulse ? (pulse ? 0.18 : 0.08) : 0.0))
+                .frame(width: 160, height: 160)
+                .blur(radius: 10)
+                .scaleEffect(phase.shouldPulse ? (pulse ? 1.22 : 1.0) : 1.0)
 
-                symbolView
-            }
-            .frame(width: 184, height: 184)
+            Circle()
+                .trim(from: phase.outerRingTrimRange.lowerBound, to: phase.outerRingTrimRange.upperBound)
+                .stroke(
+                    glowColor.opacity(ringOpacity),
+                    style: StrokeStyle(lineWidth: 10, lineCap: .round)
+                )
+                .frame(width: 172, height: 172)
+                .rotationEffect(.degrees(phase.shouldSpinRing ? (spinRing ? 360 : 0) : 0))
+
+            symbolView
         }
-        .buttonStyle(.plain)
+        .frame(width: 184, height: 184)
         .disabled(!isEnabled)
         .opacity(isEnabled ? 1.0 : 0.88)
         .animation(.easeInOut(duration: 0.24), value: phase)
@@ -60,7 +62,7 @@ struct CaptureCircleView: View {
     private var baseFillColor: Color {
         switch phase {
         case .idle:
-            return Color(red: 0.72, green: 0.78, blue: 0.86)
+            return Color(red: 0.90, green: 0.22, blue: 0.26)
         case .recording:
             return Color(red: 0.96, green: 0.18, blue: 0.22)
         case .processing:
@@ -79,7 +81,7 @@ struct CaptureCircleView: View {
     private var glowOpacity: Double {
         switch phase {
         case .recording:
-            return 0.48
+            return 0.60
         case .processing:
             return 0.34
         case .success:
@@ -96,7 +98,7 @@ struct CaptureCircleView: View {
         case .idle:
             return 0.0
         case .recording:
-            return 0.34
+            return 0.54
         case .processing:
             return 0.9
         case .success:
@@ -122,10 +124,8 @@ struct CaptureCircleView: View {
             Image(systemName: "arrow.clockwise")
                 .font(.system(size: 34, weight: .bold, design: .rounded))
                 .foregroundStyle(.white)
-        default:
-            Image(systemName: "mic.fill")
-                .font(.system(size: 38, weight: .bold, design: .rounded))
-                .foregroundStyle(.white)
+        case .idle, .recording:
+            EmptyView()
         }
     }
 

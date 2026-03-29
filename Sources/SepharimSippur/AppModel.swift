@@ -3,9 +3,9 @@ import AppKit
 
 @MainActor
 final class AppModel: ObservableObject {
-    private let idleStatusText = "Click the circle or press \(GlobalShortcutMonitor.defaultShortcutDisplayName) to start recording."
+    private let idleStatusText = "Click the circle to start recording."
     private let idleDetailText = "Recording will be transcribed locally and saved automatically when it stops."
-    private let recoverableErrorDetailText = "The app stayed stable. Click the circle or press \(GlobalShortcutMonitor.defaultShortcutDisplayName) to try recording again."
+    private let recoverableErrorDetailText = "The app stayed stable. Click the circle to try recording again."
     private let bootstrapFailureDetailText = "Local transcription setup did not finish. Retry setup to keep the app ready for fast capture."
 
     @Published private(set) var phase: CapturePhase = .idle
@@ -26,6 +26,7 @@ final class AppModel: ObservableObject {
     private let noteExporter: NoteExporting
     private var isPerformingPrimaryAction = false
     private var hasStartedDependencyBootstrap = false
+    private var successResetTask: Task<Void, Never>?
 
     init(
         settings: SettingsStore,
@@ -146,6 +147,8 @@ final class AppModel: ObservableObject {
     }
 
     private func startRecording() async {
+        cancelPendingSuccessReset()
+
         let permissionGranted = await recordingService.requestPermission()
         guard permissionGranted else {
             transitionToError("Microphone access was denied. Allow it in System Settings > Privacy & Security > Microphone.")
@@ -220,6 +223,7 @@ final class AppModel: ObservableObject {
                 statusText = "Saved \(noteURL.lastPathComponent)."
             }
             detailText = noteURL.path
+            scheduleReturnToIdleAfterSuccess()
         } catch {
             isPreparingLLM = false
             transitionToError(error.localizedDescription)
@@ -229,6 +233,24 @@ final class AppModel: ObservableObject {
     private func clearSessionArtifacts() {
         lastRecordingURL = nil
         lastSavedNoteURL = nil
+    }
+
+    private func scheduleReturnToIdleAfterSuccess() {
+        cancelPendingSuccessReset()
+
+        successResetTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 1_200_000_000)
+
+            guard let self, phase == .success else { return }
+            phase = .idle
+            statusText = idleStatusText
+            detailText = idleDetailText
+        }
+    }
+
+    private func cancelPendingSuccessReset() {
+        successResetTask?.cancel()
+        successResetTask = nil
     }
 
     private func bootstrapRequiredDependencies() async {
@@ -267,6 +289,7 @@ final class AppModel: ObservableObject {
     }
 
     private func transitionToError(_ message: String) {
+        cancelPendingSuccessReset()
         phase = .error
         statusText = message
         detailText = recoverableErrorDetailText

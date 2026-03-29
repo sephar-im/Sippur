@@ -1,22 +1,14 @@
 import Carbon.HIToolbox
+import AppKit
 import Foundation
 
 @MainActor
 final class GlobalShortcutMonitor {
-    struct Shortcut {
+    struct Shortcut: Equatable {
         let keyCode: UInt32
         let carbonModifiers: UInt32
         let displayName: String
-
-        static let capture = Shortcut(
-            keyCode: UInt32(kVK_ANSI_R),
-            carbonModifiers: UInt32(cmdKey | shiftKey),
-            displayName: "Command-Shift-R"
-        )
     }
-
-    static let defaultShortcut = Shortcut.capture
-    static let defaultShortcutDisplayName = defaultShortcut.displayName
 
     private static let eventHandler: EventHandlerUPP = { _, event, userData in
         guard let event, let userData else { return noErr }
@@ -45,24 +37,25 @@ final class GlobalShortcutMonitor {
         return noErr
     }
 
-    private let shortcut: Shortcut
     private let action: @MainActor () -> Void
     private let hotKeyID: EventHotKeyID
     private var eventHandlerRef: EventHandlerRef?
     private var hotKeyRef: EventHotKeyRef?
-    private var isStarted = false
+    private var isHandlerInstalled = false
+    private var shortcut: Shortcut?
 
     init(
-        shortcut: Shortcut = .capture,
         action: @escaping @MainActor () -> Void
     ) {
-        self.shortcut = shortcut
         self.action = action
         self.hotKeyID = EventHotKeyID(signature: Self.fourCharCode("SSHT"), id: 1)
     }
 
     func startIfNeeded() {
-        guard !isStarted else { return }
+        guard !isHandlerInstalled else {
+            registerShortcutIfPossible()
+            return
+        }
 
         var eventType = EventTypeSpec(
             eventClass: OSType(kEventClassKeyboard),
@@ -83,6 +76,27 @@ final class GlobalShortcutMonitor {
             return
         }
 
+        isHandlerInstalled = true
+        registerShortcutIfPossible()
+    }
+
+    func updateShortcut(_ shortcut: Shortcut?) {
+        self.shortcut = shortcut
+        startIfNeeded()
+    }
+
+    func unregisterShortcut() {
+        if let hotKeyRef {
+            UnregisterEventHotKey(hotKeyRef)
+            self.hotKeyRef = nil
+        }
+    }
+
+    private func registerShortcutIfPossible() {
+        unregisterShortcut()
+
+        guard let shortcut else { return }
+
         let hotKeyStatus = RegisterEventHotKey(
             shortcut.keyCode,
             shortcut.carbonModifiers,
@@ -93,16 +107,10 @@ final class GlobalShortcutMonitor {
         )
 
         guard hotKeyStatus == noErr else {
-            if let eventHandlerRef {
-                RemoveEventHandler(eventHandlerRef)
-                self.eventHandlerRef = nil
-            }
-
+            self.hotKeyRef = nil
             print("Failed to register global shortcut: \(hotKeyStatus)")
             return
         }
-
-        isStarted = true
     }
 
     private static func fourCharCode(_ string: StaticString) -> OSType {
@@ -113,5 +121,81 @@ final class GlobalShortcutMonitor {
                 (partialResult << 8) + OSType(codeUnit)
             }
         }
+    }
+
+    static func shortcut(from event: NSEvent) -> Shortcut? {
+        let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
+        guard !modifiers.isEmpty else { return nil }
+
+        let keyCode = UInt32(event.keyCode)
+        let keyLabel = keyDisplay(for: event)
+        guard !keyLabel.isEmpty else { return nil }
+
+        let modifierLabel = displayName(for: modifiers)
+        return Shortcut(
+            keyCode: keyCode,
+            carbonModifiers: carbonModifiers(for: modifiers),
+            displayName: "\(modifierLabel)-\(keyLabel)"
+        )
+    }
+
+    private static func keyDisplay(for event: NSEvent) -> String {
+        if let characters = event.charactersIgnoringModifiers?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .uppercased(),
+           !characters.isEmpty {
+            return characters
+        }
+
+        switch Int(event.keyCode) {
+        case kVK_Space:
+            return "Space"
+        case kVK_Return:
+            return "Return"
+        case kVK_Delete:
+            return "Delete"
+        case kVK_Escape:
+            return "Escape"
+        default:
+            return ""
+        }
+    }
+
+    private static func displayName(for modifiers: NSEvent.ModifierFlags) -> String {
+        var labels: [String] = []
+
+        if modifiers.contains(.command) {
+            labels.append("Command")
+        }
+        if modifiers.contains(.shift) {
+            labels.append("Shift")
+        }
+        if modifiers.contains(.option) {
+            labels.append("Option")
+        }
+        if modifiers.contains(.control) {
+            labels.append("Control")
+        }
+
+        return labels.joined(separator: "-")
+    }
+
+    private static func carbonModifiers(for modifiers: NSEvent.ModifierFlags) -> UInt32 {
+        var carbonFlags: UInt32 = 0
+
+        if modifiers.contains(.command) {
+            carbonFlags |= UInt32(cmdKey)
+        }
+        if modifiers.contains(.shift) {
+            carbonFlags |= UInt32(shiftKey)
+        }
+        if modifiers.contains(.option) {
+            carbonFlags |= UInt32(optionKey)
+        }
+        if modifiers.contains(.control) {
+            carbonFlags |= UInt32(controlKey)
+        }
+
+        return carbonFlags
     }
 }
