@@ -5,6 +5,7 @@ import SwiftUI
 final class CapturePanelController: ObservableObject {
     private var panel: CapturePanel?
     private var hasPresentedInitialPanel = false
+    private var activeSpaceObserver: NSObjectProtocol?
 
     func installIfNeeded(model: AppModel) {
         guard panel == nil else { return }
@@ -35,15 +36,24 @@ final class CapturePanelController: ObservableObject {
         panel.isOpaque = false
         panel.hasShadow = false
         panel.isFloatingPanel = true
-        panel.level = .statusBar
+        panel.level = .screenSaver
         panel.isMovableByWindowBackground = false
         panel.isReleasedWhenClosed = false
         panel.hidesOnDeactivate = false
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
         panel.isExcludedFromWindowsMenu = true
         panel.center()
 
         self.panel = panel
+        activeSpaceObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.activeSpaceDidChangeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.keepPanelVisible()
+            }
+        }
 
         if !hasPresentedInitialPanel {
             hasPresentedInitialPanel = true
@@ -58,6 +68,11 @@ final class CapturePanelController: ObservableObject {
         NSApp.activate(ignoringOtherApps: true)
         panel.orderFrontRegardless()
         panel.makeKeyAndOrderFront(nil)
+    }
+
+    private func keepPanelVisible() {
+        guard let panel else { return }
+        panel.orderFrontRegardless()
     }
 }
 
