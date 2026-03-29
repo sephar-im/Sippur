@@ -35,11 +35,11 @@ final class CapturePanelController: ObservableObject {
         panel.isOpaque = false
         panel.hasShadow = false
         panel.isFloatingPanel = true
-        panel.level = .floating
+        panel.level = .statusBar
         panel.isMovableByWindowBackground = false
         panel.isReleasedWhenClosed = false
         panel.hidesOnDeactivate = false
-        panel.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
         panel.isExcludedFromWindowsMenu = true
         panel.center()
 

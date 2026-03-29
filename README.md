@@ -112,6 +112,10 @@ Build the app bundle:
 ./scripts/build_app_bundle.sh
 ```
 
+Default output:
+
+- `dist/0.1.0/Sepharim Sippur.app`
+
 Build the DMG:
 
 ```bash
@@ -119,6 +123,10 @@ SIGNING_IDENTITY="Developer ID Application: Your Name (TEAMID)" \
 VERSION="1.0.0" \
 ./scripts/build_dmg.sh
 ```
+
+Default output:
+
+- `dist/1.0.0/SepharimSippur-1.0.0.dmg`
 
 Notarize the release:
 

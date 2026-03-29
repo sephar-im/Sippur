@@ -46,7 +46,7 @@ cd /Users/om/Documents/SSSS/sepharim_sippur
 ```
 
 Output:
-- `dist/Sepharim Sippur.app`
+- `dist/1.0.0/Sepharim Sippur.app`
 
 ## Build the DMG
 
@@ -58,7 +58,7 @@ VERSION="1.0.0" \
 ```
 
 Output:
-- `dist/SepharimSippur-1.0.0.dmg`
+- `dist/1.0.0/SepharimSippur-1.0.0.dmg`
 
 ## Notarization
 
