@@ -4,6 +4,8 @@
 
 # Sepharim Sippur
 
+> Coded with Codex.
+
 Sepharim Sippur is a native macOS app for ultra-fast voice-to-text note capture.
 
 Click the circle or use a shortcut, speak, stop, and get a local text note saved automatically.
