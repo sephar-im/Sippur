@@ -18,8 +18,7 @@ Click the circle or use a shortcut, speak, stop, and get a local text note saved
 - Local microphone recording
 - Local transcription with Whisper
 - Automatic note export to a user-selected folder
-- Output as `TXT` or `MD`
-- `Normal` and `Obsidian` markdown modes
+- Output as plain `TXT`
 - Optional local LLM cleanup with Ollama and `qwen2.5:1.5b`
 - Menu bar settings, no heavy preferences UI
 - Automatic UI language based on the system language
@@ -34,28 +33,9 @@ Click the circle or use a shortcut, speak, stop, and get a local text note saved
 
 The product keeps notes, not recordings. Audio is only used temporarily during capture and is removed after transcription.
 
-## Output Modes
+## Output
 
-### TXT
-
-Saves clean plain text only.
-
-### Markdown
-
-Saves a simple markdown note with:
-
-- title
-- date
-- body
-
-### Obsidian Mode
-
-Still saves plain markdown files. It does not require plugins, APIs, or templates.
-
-The difference is intentionally small:
-
-- `Normal` mode writes simple markdown with a title, a date line, and the body
-- `Obsidian` mode writes markdown that fits naturally in a vault, including a small `created` frontmatter field
+Notes are always saved as plain text `.txt` files with a sortable timestamp filename.
 
 ## Optional Local LLM Cleanup
 
@@ -72,7 +52,6 @@ This stage is not for chat. It is only used after Whisper transcription to:
 - improve paragraphing
 - correct obvious transcription mistakes when the context is clear
 - keep the final wording when the speaker clearly self-corrects
-- optionally produce a cleaner markdown title
 
 It is meant to help, not to be perfect. Important notes should still be reviewed.
 

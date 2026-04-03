@@ -26,9 +26,9 @@ enum CapturePhase: Equatable {
     var accentColor: Color {
         switch self {
         case .idle:
-            return Color(red: 0.89, green: 0.20, blue: 0.24)
+            return Color(red: 1.0, green: 0.0, blue: 0.0)
         case .recording:
-            return Color(red: 0.94, green: 0.16, blue: 0.20)
+            return Color(red: 1.0, green: 0.0, blue: 0.0)
         case .processing:
             return Color(red: 0.88, green: 0.63, blue: 0.19)
         case .success:
@@ -75,37 +75,57 @@ enum CapturePhase: Equatable {
     }
 }
 
-enum OutputFormat: String, CaseIterable, Identifiable {
-    case txt
-    case md
-
-    var id: String { rawValue }
-
-    var label: String {
-        rawValue.uppercased()
-    }
-}
-
-enum OutputMode: String, CaseIterable, Identifiable {
-    case normal
-    case obsidian
-
-    var id: String { rawValue }
-
-    var label: String {
-        switch self {
-        case .normal:
-            return L10n.tr("output.mode.normal")
-        case .obsidian:
-            return L10n.tr("output.mode.obsidian")
-        }
-    }
-}
-
 struct ExportSettings: Equatable {
     let folderURL: URL
-    let format: OutputFormat
-    let mode: OutputMode
+}
+
+enum WhisperModelChoice: String, CaseIterable, Identifiable, Hashable {
+    case base
+    case medium
+    case largeV3
+
+    var id: String { rawValue }
+
+    var fileName: String {
+        switch self {
+        case .base:
+            return "ggml-base.bin"
+        case .medium:
+            return "ggml-medium.bin"
+        case .largeV3:
+            return "ggml-large-v3.bin"
+        }
+    }
+
+    var downloadURL: URL {
+        URL(string: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/\(fileName)")!
+    }
+
+    var title: String {
+        switch self {
+        case .base:
+            return L10n.tr("whisper.model.base")
+        case .medium:
+            return L10n.tr("whisper.model.medium")
+        case .largeV3:
+            return L10n.tr("whisper.model.large_v3")
+        }
+    }
+
+    var approximateSize: String {
+        switch self {
+        case .base:
+            return "~142 MB"
+        case .medium:
+            return "~1.5 GB"
+        case .largeV3:
+            return "~3.1 GB"
+        }
+    }
+
+    var displayLabel: String {
+        "\(title) (\(approximateSize))"
+    }
 }
 
 enum LocalLLMModel: String, Equatable, Hashable, Identifiable {
@@ -121,12 +141,6 @@ enum LocalLLMModel: String, Equatable, Hashable, Identifiable {
             return "Qwen 1.5B"
         }
     }
-}
-
-struct LLMPostProcessingSettings: Equatable {
-    let isEnabled: Bool
-    let generatesTitle: Bool
-    let addsObsidianWikilinks: Bool
 }
 
 struct NoteContent: Equatable {

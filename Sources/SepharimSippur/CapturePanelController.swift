@@ -21,12 +21,12 @@ final class CapturePanelController: ObservableObject {
                 model.requestCaptureToggle()
             }
         )
-        hostingView.frame = NSRect(x: 0, y: 0, width: 184, height: 184)
+        hostingView.frame = NSRect(x: 0, y: 0, width: CaptureCircleView.panelSize, height: CaptureCircleView.panelSize)
         hostingView.wantsLayer = true
         hostingView.layer?.backgroundColor = NSColor.clear.cgColor
 
         let panel = CapturePanel(
-            contentRect: NSRect(x: 0, y: 0, width: 184, height: 184),
+            contentRect: NSRect(x: 0, y: 0, width: CaptureCircleView.panelSize, height: CaptureCircleView.panelSize),
             styleMask: [.borderless],
             backing: .buffered,
             defer: false

@@ -60,18 +60,37 @@ private final class MockTranscriptionService: TranscriptionServicing {
     var prepareCalls = 0
     var transcribeCalls = 0
     var lastAudioURL: URL?
+    var lastModel: WhisperModelChoice?
+    var reportedProgress: [Double] = []
+    var installedModelsSet: Set<WhisperModelChoice> = [.medium]
     var prepareResult: Result<Void, Error> = .success(())
     var result: Result<String, Error> = .success("Transcribed words")
 
-    func prepare(progress: @escaping @MainActor (String, String?) -> Void) async throws {
-        prepareCalls += 1
-        progress("Checking local transcription.", "ggml-base.bin")
-        try prepareResult.get()
+    func installedModels() -> Set<WhisperModelChoice> {
+        installedModelsSet
     }
 
-    func transcribeAudio(at audioURL: URL) async throws -> String {
+    func prepare(model: WhisperModelChoice, progress: @escaping @MainActor (String, String?) -> Void) async throws {
+        prepareCalls += 1
+        progress("Checking local transcription.", model.fileName)
+        try prepareResult.get()
+        installedModelsSet.insert(model)
+    }
+
+    func removeModel(_ model: WhisperModelChoice) throws {
+        installedModelsSet.remove(model)
+    }
+
+    func transcribeAudio(
+        at audioURL: URL,
+        using model: WhisperModelChoice,
+        progress: @escaping @MainActor (Double) -> Void
+    ) async throws -> String {
         transcribeCalls += 1
         lastAudioURL = audioURL
+        lastModel = model
+        progress(0.42)
+        reportedProgress.append(0.42)
         return try result.get()
     }
 }
@@ -94,7 +113,6 @@ private final class MockLLMPostProcessingService: LLMPostProcessingServicing {
     }
 
     func prepare(
-        settings: LLMPostProcessingSettings,
         progress: @escaping @MainActor (String, String?) -> Void
     ) async throws -> LocalLLMModel {
         prepareCalls += 1
@@ -103,7 +121,6 @@ private final class MockLLMPostProcessingService: LLMPostProcessingServicing {
     }
 
     func removeModel(
-        settings: LLMPostProcessingSettings,
         progress: @escaping @MainActor (String, String?) -> Void
     ) async throws -> LocalLLMModel {
         removeCalls += 1
@@ -115,8 +132,6 @@ private final class MockLLMPostProcessingService: LLMPostProcessingServicing {
 
     func postProcess(
         transcription: String,
-        exportSettings: ExportSettings,
-        llmSettings: LLMPostProcessingSettings,
         progress: @escaping @MainActor (String, String?) -> Void
     ) async throws -> NoteContent {
         postProcessCalls += 1
@@ -127,15 +142,32 @@ private final class MockLLMPostProcessingService: LLMPostProcessingServicing {
 
 private final class MockNoteExporter: NoteExporting {
     var saveCalls = 0
+    var saveFixedCalls = 0
     var lastContent: NoteContent?
+    var lastFixedContent: NoteContent?
     var lastSettings: ExportSettings?
-    var result: Result<URL, Error> = .success(URL(fileURLWithPath: "/tmp/test-note.md"))
+    var lastFixedBaseURL: URL?
+    var result: Result<URL, Error> = .success(URL(fileURLWithPath: "/tmp/test-note.txt"))
+    var fixedResult: Result<URL, Error> = .success(URL(fileURLWithPath: "/tmp/test-note fixed.txt"))
 
     func saveNote(content: NoteContent, using settings: ExportSettings, date: Date) throws -> URL {
         saveCalls += 1
         lastContent = content
         lastSettings = settings
-        return try result.get()
+        let url = try result.get()
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try (content.body + "\n").write(to: url, atomically: true, encoding: .utf8)
+        return url
+    }
+
+    func saveFixedNote(content: NoteContent, basedOn originalNoteURL: URL) throws -> URL {
+        saveFixedCalls += 1
+        lastFixedContent = content
+        lastFixedBaseURL = originalNoteURL
+        let url = try fixedResult.get()
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try (content.body + "\n").write(to: url, atomically: true, encoding: .utf8)
+        return url
     }
 }
 
@@ -152,28 +184,30 @@ final class SepharimSippurTests: XCTestCase {
     @MainActor
     func testAppModelStartsIdle() {
         let suiteName = "SepharimSippurTests.\(UUID().uuidString)"
-        let model = AppModel(settings: makeTestSettingsStore(suiteName: suiteName, reset: true), recordingService: MockRecordingService())
+        let model = AppModel(
+            settings: makeTestSettingsStore(suiteName: suiteName, reset: true),
+            recordingService: MockRecordingService(),
+            transcriptionService: MockTranscriptionService()
+        )
 
         XCTAssertEqual(model.phase, .idle)
         XCTAssertEqual(model.statusText, L10n.tr("app.idle.status"))
     }
 
     @MainActor
-    func testSettingsPersistFormatModeAndFolder() {
+    func testSettingsPersistFolder() {
         let suiteName = "SepharimSippurTests.settings.\(UUID().uuidString)"
         let store = makeTestSettingsStore(suiteName: suiteName, reset: true)
         let chosenFolder = FileManager.default.temporaryDirectory
             .appending(component: suiteName, directoryHint: .isDirectory)
             .appending(component: "Chosen", directoryHint: .isDirectory)
 
-        store.outputFormat = .txt
-        store.outputMode = .obsidian
+        store.setWhisperModel(.largeV3)
         store.setOutputFolder(chosenFolder)
 
         let reloadedStore = makeTestSettingsStore(suiteName: suiteName)
-        XCTAssertEqual(reloadedStore.outputFormat, .txt)
-        XCTAssertEqual(reloadedStore.outputMode, .obsidian)
         XCTAssertEqual(reloadedStore.outputFolderURL, chosenFolder.standardizedFileURL)
+        XCTAssertEqual(reloadedStore.whisperModel, .largeV3)
     }
 
     @MainActor
@@ -216,11 +250,7 @@ final class SepharimSippurTests: XCTestCase {
     }
 
     func testTxtDraftUsesSortableFilenameAndPlainTextBody() {
-        let settings = ExportSettings(
-            folderURL: URL(fileURLWithPath: "/tmp/notes"),
-            format: .txt,
-            mode: .normal
-        )
+        let settings = ExportSettings(folderURL: URL(fileURLWithPath: "/tmp/notes"))
         let exporter = NoteExporter()
         let date = Date(timeIntervalSince1970: 0)
 
@@ -236,58 +266,10 @@ final class SepharimSippurTests: XCTestCase {
         XCTAssertEqual(draft.contents, "Hello from Whisper.\n")
     }
 
-    func testMarkdownDraftUsesMinimalObsidianFormatting() {
-        let settings = ExportSettings(
-            folderURL: URL(fileURLWithPath: "/tmp/notes"),
-            format: .md,
-            mode: .obsidian
-        )
-        let exporter = NoteExporter()
-        let date = Date(timeIntervalSince1970: 0)
-
-        let draft = exporter.buildNoteDraft(
-            content: .whisperOnly(body: "Hello from Whisper."),
-            using: settings,
-            date: date,
-            timeZone: TimeZone(secondsFromGMT: 0)!,
-            locale: Locale(identifier: "en_US_POSIX")
-        )
-
-        XCTAssertEqual(draft.fileName, "1970-01-01 00-00-00.md")
-        XCTAssertTrue(draft.contents.hasPrefix("---\ncreated: 1970-01-01 00:00:00\n---\n\n"))
-        XCTAssertTrue(draft.contents.contains("# 1970-01-01 00:00:00"))
-        XCTAssertTrue(draft.contents.contains("Hello from Whisper."))
-        XCTAssertFalse(draft.contents.contains("[["))
-    }
-
-    func testMarkdownDraftUsesSimpleNormalFormatting() {
-        let settings = ExportSettings(
-            folderURL: URL(fileURLWithPath: "/tmp/notes"),
-            format: .md,
-            mode: .normal
-        )
-        let exporter = NoteExporter()
-        let date = Date(timeIntervalSince1970: 0)
-
-        let draft = exporter.buildNoteDraft(
-            content: .whisperOnly(body: "Hello from Whisper."),
-            using: settings,
-            date: date,
-            timeZone: TimeZone(secondsFromGMT: 0)!,
-            locale: Locale(identifier: "en_US_POSIX")
-        )
-
-        XCTAssertEqual(draft.fileName, "1970-01-01 00-00-00.md")
-        XCTAssertTrue(draft.contents.contains("# \(L10n.tr("note_export.default_title"))"))
-        XCTAssertTrue(draft.contents.contains("\(L10n.tr("note_export.date_label")): 1970-01-01 00:00:00"))
-        XCTAssertTrue(draft.contents.contains("Hello from Whisper."))
-        XCTAssertFalse(draft.contents.hasPrefix("---\n"))
-    }
-
     func testSaveNoteAddsSuffixWhenTimestampedFileAlreadyExists() throws {
         let folderURL = FileManager.default.temporaryDirectory
             .appending(component: "SepharimSippurTests.\(UUID().uuidString)", directoryHint: .isDirectory)
-        let settings = ExportSettings(folderURL: folderURL, format: .txt, mode: .normal)
+        let settings = ExportSettings(folderURL: folderURL)
         let exporter = NoteExporter()
         let date = Date(timeIntervalSince1970: 0)
 
@@ -309,7 +291,7 @@ final class SepharimSippurTests: XCTestCase {
         let fileURL = tempDirectory.appending(component: "not-a-folder", directoryHint: .notDirectory)
         try "content".write(to: fileURL, atomically: true, encoding: .utf8)
 
-        let settings = ExportSettings(folderURL: fileURL, format: .txt, mode: .normal)
+        let settings = ExportSettings(folderURL: fileURL)
         let exporter = NoteExporter()
 
         XCTAssertThrowsError(try exporter.saveNote(content: .whisperOnly(body: "Hello"), using: settings, date: Date(timeIntervalSince1970: 0))) { error in
@@ -336,7 +318,7 @@ final class SepharimSippurTests: XCTestCase {
 
         await model.bootstrapDependenciesOnLaunch()
 
-        XCTAssertEqual(transcriptionService.prepareCalls, 1)
+        XCTAssertEqual(transcriptionService.prepareCalls, 0)
         XCTAssertTrue(model.isCaptureReady)
         XCTAssertFalse(model.hasBlockingSetupFailure)
         XCTAssertEqual(model.phase, .idle)
@@ -347,6 +329,7 @@ final class SepharimSippurTests: XCTestCase {
     func testBootstrapFailureBlocksCaptureUntilRetry() async {
         let recordingService = MockRecordingService()
         let transcriptionService = MockTranscriptionService()
+        transcriptionService.installedModelsSet = []
         transcriptionService.prepareResult = .failure(TestFailure())
         let suiteName = "SepharimSippurTests.\(UUID().uuidString)"
         let model = AppModel(
@@ -361,25 +344,25 @@ final class SepharimSippurTests: XCTestCase {
         XCTAssertFalse(model.isCaptureReady)
         XCTAssertTrue(model.hasBlockingSetupFailure)
         XCTAssertEqual(model.phase, .error)
-        XCTAssertEqual(model.statusText, "Test failure")
+        XCTAssertEqual(model.statusText, L10n.format("app.whisper.not_ready", WhisperModelChoice.medium.title))
         XCTAssertEqual(recordingService.startCalls, 0)
 
         transcriptionService.prepareResult = .success(())
         model.retryDependencyBootstrap()
-        try? await Task.sleep(nanoseconds: 50_000_000)
+        try? await Task.sleep(nanoseconds: 100_000_000)
 
+        XCTAssertEqual(transcriptionService.prepareCalls, 1)
         XCTAssertTrue(model.isCaptureReady)
         XCTAssertFalse(model.hasBlockingSetupFailure)
         XCTAssertEqual(model.phase, .idle)
     }
 
     @MainActor
-    func testBootstrapOnLaunchPreparesOptionalLLMWhenEnabled() async {
+    func testBootstrapOnLaunchChecksLLMAvailabilityWithoutPreparingModel() async {
         let transcriptionService = MockTranscriptionService()
         let llmService = MockLLMPostProcessingService()
         let suiteName = "SepharimSippurTests.\(UUID().uuidString)"
         let settings = makeTestSettingsStore(suiteName: suiteName, reset: true)
-        settings.isLLMPostProcessingEnabled = true
 
         let model = AppModel(
             settings: settings,
@@ -390,9 +373,9 @@ final class SepharimSippurTests: XCTestCase {
 
         await model.bootstrapDependenciesOnLaunch()
 
-        XCTAssertEqual(transcriptionService.prepareCalls, 1)
-        XCTAssertEqual(llmService.prepareCalls, 1)
-        XCTAssertEqual(model.llmStatusText, L10n.format("app.llm.ready_model", LocalLLMModel.cleanupModel.label))
+        XCTAssertEqual(transcriptionService.prepareCalls, 0)
+        XCTAssertEqual(llmService.prepareCalls, 0)
+        XCTAssertEqual(model.llmStatusText, L10n.format("app.llm.manual_fix_available", LocalLLMModel.cleanupModel.label))
     }
 
     @MainActor
@@ -401,7 +384,6 @@ final class SepharimSippurTests: XCTestCase {
         let llmService = MockLLMPostProcessingService()
         let suiteName = "SepharimSippurTests.remove-llm.\(UUID().uuidString)"
         let settings = makeTestSettingsStore(suiteName: suiteName, reset: true)
-        settings.isLLMPostProcessingEnabled = true
 
         let model = AppModel(
             settings: settings,
@@ -417,8 +399,7 @@ final class SepharimSippurTests: XCTestCase {
         XCTAssertEqual(llmService.removeCalls, 1)
         XCTAssertEqual(llmService.removedModel, .qwen25_15b)
         XCTAssertNil(model.preparedLLMModel)
-        XCTAssertFalse(settings.isLLMPostProcessingEnabled)
-        XCTAssertEqual(model.llmStatusText, L10n.format("app.llm.removed_and_disabled", LocalLLMModel.cleanupModel.label))
+        XCTAssertEqual(model.llmStatusText, L10n.format("app.llm.removed_model", LocalLLMModel.cleanupModel.label))
     }
 
     @MainActor
@@ -464,12 +445,13 @@ final class SepharimSippurTests: XCTestCase {
         await model.performCaptureToggle()
 
         XCTAssertEqual(model.phase, .success)
-        XCTAssertEqual(model.statusText, L10n.format("app.status.saved_and_copied", "test-note.md"))
-        XCTAssertEqual(model.lastSavedNoteURL?.path, "/tmp/test-note.md")
+        XCTAssertEqual(model.statusText, L10n.format("app.status.saved_and_copied", "test-note.txt"))
+        XCTAssertEqual(model.lastSavedNoteURL?.path, "/tmp/test-note.txt")
         XCTAssertEqual(service.startCalls, 1)
         XCTAssertEqual(service.stopCalls, 1)
         XCTAssertEqual(transcriptionService.transcribeCalls, 1)
         XCTAssertEqual(transcriptionService.lastAudioURL?.path, "/tmp/test-recording.wav")
+        XCTAssertEqual(transcriptionService.reportedProgress, [0.42])
         XCTAssertEqual(exporter.saveCalls, 1)
         XCTAssertEqual(exporter.lastContent, .whisperOnly(body: "Transcribed words"))
         XCTAssertEqual(exporter.lastSettings, settings.exportSettings)
@@ -477,14 +459,13 @@ final class SepharimSippurTests: XCTestCase {
     }
 
     @MainActor
-    func testLLMPostProcessingEnabledUsesCleanedNoteContent() async {
+    func testFixLastSavedNoteUsesCleanedContentAndCreatesFixedFile() async {
         let service = MockRecordingService()
         let transcriptionService = MockTranscriptionService()
         let llmService = MockLLMPostProcessingService()
         let exporter = MockNoteExporter()
         let suiteName = "SepharimSippurTests.\(UUID().uuidString)"
         let settings = makeTestSettingsStore(suiteName: suiteName, reset: true)
-        settings.isLLMPostProcessingEnabled = true
 
         let model = AppModel(
             settings: settings,
@@ -497,10 +478,15 @@ final class SepharimSippurTests: XCTestCase {
         await model.bootstrapDependenciesOnLaunch()
         await model.performCaptureToggle()
         await model.performCaptureToggle()
+        model.fixLastSavedNote()
+        try? await Task.sleep(nanoseconds: 300_000_000)
 
         XCTAssertEqual(llmService.postProcessCalls, 1)
-        XCTAssertEqual(exporter.lastContent, NoteContent(body: "Cleaned transcription", title: "Cleaned Title"))
-        XCTAssertEqual(model.statusText, L10n.format("app.status.saved", "test-note.md"))
+        XCTAssertEqual(exporter.saveFixedCalls, 1)
+        XCTAssertEqual(exporter.lastFixedContent, NoteContent(body: "Cleaned transcription", title: "Cleaned Title"))
+        XCTAssertEqual(exporter.lastFixedBaseURL?.path, "/tmp/test-note.txt")
+        XCTAssertEqual(model.lastSavedNoteURL?.path, "/tmp/test-note fixed.txt")
+        XCTAssertEqual(model.llmStatusText, L10n.format("app.llm.ready_model", LocalLLMModel.cleanupModel.label))
     }
 
     @MainActor
@@ -598,7 +584,7 @@ final class SepharimSippurTests: XCTestCase {
     }
 
     @MainActor
-    func testLLMFailureFallsBackToWhisperAndStillSaves() async {
+    func testFixLastSavedNoteFailureKeepsOriginalNoteAndRestoresIdle() async {
         let service = MockRecordingService()
         let transcriptionService = MockTranscriptionService()
         let llmService = MockLLMPostProcessingService()
@@ -606,7 +592,6 @@ final class SepharimSippurTests: XCTestCase {
         let exporter = MockNoteExporter()
         let suiteName = "SepharimSippurTests.\(UUID().uuidString)"
         let settings = makeTestSettingsStore(suiteName: suiteName, reset: true)
-        settings.isLLMPostProcessingEnabled = true
 
         let model = AppModel(
             settings: settings,
@@ -619,11 +604,14 @@ final class SepharimSippurTests: XCTestCase {
         await model.bootstrapDependenciesOnLaunch()
         await model.performCaptureToggle()
         await model.performCaptureToggle()
+        model.fixLastSavedNote()
+        try? await Task.sleep(nanoseconds: 300_000_000)
 
-        XCTAssertEqual(model.phase, .success)
-        XCTAssertEqual(model.statusText, L10n.format("app.status.saved_whisper_only", "test-note.md"))
-        XCTAssertEqual(exporter.lastContent, .whisperOnly(body: "Transcribed words"))
+        XCTAssertEqual(model.phase, .idle)
+        XCTAssertEqual(model.lastSavedNoteURL?.path, "/tmp/test-note.txt")
+        XCTAssertEqual(exporter.saveFixedCalls, 0)
         XCTAssertEqual(llmService.postProcessCalls, 1)
+        XCTAssertEqual(model.llmStatusText, "Test failure")
     }
 
     @MainActor

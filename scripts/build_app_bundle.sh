@@ -10,9 +10,7 @@ VERSION="${VERSION:-0.1.0}"
 BUILD_NUMBER="${BUILD_NUMBER:-$VERSION}"
 MINIMUM_SYSTEM_VERSION="${MINIMUM_SYSTEM_VERSION:-14.0}"
 APP_CATEGORY="${APP_CATEGORY:-public.app-category.productivity}"
-ICON_SOURCE="${ICON_SOURCE:-$ROOT_DIR/sippur.png}"
-MENU_BAR_ICON_LIGHT_SOURCE="${MENU_BAR_ICON_LIGHT_SOURCE:-$ROOT_DIR/sippur_bar_lightmode.svg}"
-MENU_BAR_ICON_DARK_SOURCE="${MENU_BAR_ICON_DARK_SOURCE:-$ROOT_DIR/sippur_bar_darkmode.svg}"
+ICON_SOURCE="${ICON_SOURCE:-}"
 MICROPHONE_USAGE_DESCRIPTION="${MICROPHONE_USAGE_DESCRIPTION:-Sepharim Sippur needs microphone access to turn your speech into local text notes.}"
 HUMAN_READABLE_COPYRIGHT="${HUMAN_READABLE_COPYRIGHT:-Copyright © 2026 Sepharim Sippur. All rights reserved.}"
 OUTPUT_ROOT="${OUTPUT_ROOT:-$ROOT_DIR/dist}"
@@ -28,6 +26,7 @@ APP_INFO_PLIST="$APP_CONTENTS/Info.plist"
 WORK_DIR="$OUTPUT_DIR/.build-app"
 ICONSET_DIR="$WORK_DIR/AppIcon.iconset"
 ICNS_PATH="$APP_RESOURCES/AppIcon.icns"
+ICON_RASTER_SOURCE="$WORK_DIR/AppIconSource.png"
 
 mkdir -p "$OUTPUT_DIR"
 
@@ -36,18 +35,8 @@ if [[ "$REQUIRE_DEVELOPER_ID" == "1" && "$SIGNING_IDENTITY" == "-" ]]; then
   exit 1
 fi
 
-if [[ ! -f "$ICON_SOURCE" ]]; then
+if [[ -n "$ICON_SOURCE" && ! -f "$ICON_SOURCE" ]]; then
   echo "Icon source not found at $ICON_SOURCE" >&2
-  exit 1
-fi
-
-if [[ ! -f "$MENU_BAR_ICON_LIGHT_SOURCE" ]]; then
-  echo "Menu bar light icon source not found at $MENU_BAR_ICON_LIGHT_SOURCE" >&2
-  exit 1
-fi
-
-if [[ ! -f "$MENU_BAR_ICON_DARK_SOURCE" ]]; then
-  echo "Menu bar dark icon source not found at $MENU_BAR_ICON_DARK_SOURCE" >&2
   exit 1
 fi
 
@@ -73,8 +62,6 @@ mkdir -p "$APP_MACOS" "$APP_RESOURCES" "$ICONSET_DIR"
 
 cp "$EXECUTABLE_SOURCE" "$APP_MACOS/$EXECUTABLE_NAME"
 chmod +x "$APP_MACOS/$EXECUTABLE_NAME"
-cp "$MENU_BAR_ICON_LIGHT_SOURCE" "$APP_RESOURCES/sippur_bar_lightmode.svg"
-cp "$MENU_BAR_ICON_DARK_SOURCE" "$APP_RESOURCES/sippur_bar_darkmode.svg"
 
 while IFS= read -r -d '' resource_bundle; do
   cp -R "$resource_bundle" "$APP_RESOURCES/"
@@ -82,10 +69,57 @@ done < <(find "$BIN_DIR" -maxdepth 1 -name '*.bundle' -print0)
 
 xattr -cr "$APP_BUNDLE" 2>/dev/null || true
 
+generate_red_circle_icon() {
+  local output_path="$1"
+  local script_path="$WORK_DIR/generate_red_circle_icon.swift"
+
+  cat >"$script_path" <<'EOF'
+import AppKit
+
+let outputPath = CommandLine.arguments[1]
+let size = NSSize(width: 1024, height: 1024)
+let image = NSImage(size: size)
+
+image.lockFocus()
+NSColor.black.setFill()
+NSBezierPath(rect: NSRect(origin: .zero, size: size)).fill()
+
+NSColor(calibratedRed: 1.0, green: 0.0, blue: 0.0, alpha: 1.0).setFill()
+let inset = size.width * 0.085
+NSBezierPath(
+    ovalIn: NSRect(
+        x: inset,
+        y: inset,
+        width: size.width - (inset * 2),
+        height: size.height - (inset * 2)
+    )
+).fill()
+image.unlockFocus()
+
+guard
+    let tiffData = image.tiffRepresentation,
+    let bitmap = NSBitmapImageRep(data: tiffData),
+    let pngData = bitmap.representation(using: .png, properties: [:])
+else {
+    fatalError("Failed to generate icon image data.")
+}
+
+try pngData.write(to: URL(fileURLWithPath: outputPath))
+EOF
+
+  swift "$script_path" "$output_path"
+}
+
 echo "Generating app icon..."
+if [[ -n "$ICON_SOURCE" ]]; then
+  cp "$ICON_SOURCE" "$ICON_RASTER_SOURCE"
+else
+  generate_red_circle_icon "$ICON_RASTER_SOURCE"
+fi
+
 for size in 16 32 128 256 512; do
-  sips -z "$size" "$size" "$ICON_SOURCE" --out "$ICONSET_DIR/icon_${size}x${size}.png" >/dev/null
-  sips -z $((size * 2)) $((size * 2)) "$ICON_SOURCE" --out "$ICONSET_DIR/icon_${size}x${size}@2x.png" >/dev/null
+  sips -z "$size" "$size" "$ICON_RASTER_SOURCE" --out "$ICONSET_DIR/icon_${size}x${size}.png" >/dev/null
+  sips -z $((size * 2)) $((size * 2)) "$ICON_RASTER_SOURCE" --out "$ICONSET_DIR/icon_${size}x${size}@2x.png" >/dev/null
 done
 iconutil -c icns "$ICONSET_DIR" -o "$ICNS_PATH"
 

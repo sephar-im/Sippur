@@ -1,21 +1,15 @@
 import SwiftUI
 
 struct MenuBarIconView: View {
-    @Environment(\.colorScheme) private var colorScheme
-
     var body: some View {
-        if let menuBarIcon = BrandImageLoader.menuBarIcon(for: iconVariant) {
-            Image(nsImage: menuBarIcon)
+        if let icon = BrandImageLoader.menuBarStatusIcon() {
+            Image(nsImage: icon)
                 .resizable()
                 .renderingMode(.original)
                 .interpolation(.high)
-                .frame(width: 14, height: 14)
+                .frame(width: 18, height: 18)
         } else {
-            Text("SS")
+            Image(systemName: "mic.fill")
         }
-    }
-
-    private var iconVariant: MenuBarIconVariant {
-        colorScheme == .dark ? .darkMode : .lightMode
     }
 }

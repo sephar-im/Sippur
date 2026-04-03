@@ -23,7 +23,6 @@ struct SettingsWindowView: View {
                     settings: settings,
                     setGlobalShortcut: setGlobalShortcut,
                     showsFirstUseHelp: false,
-                    showsModeExplanation: true,
                     showsAdvancedLLMControls: true
                 )
             }

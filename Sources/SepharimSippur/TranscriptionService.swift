@@ -5,8 +5,94 @@ import SwiftWhisper
 
 @MainActor
 protocol TranscriptionServicing {
-    func prepare(progress: @escaping @MainActor (String, String?) -> Void) async throws
-    func transcribeAudio(at audioURL: URL) async throws -> String
+    func installedModels() -> Set<WhisperModelChoice>
+    func prepare(model: WhisperModelChoice, progress: @escaping @MainActor (String, String?) -> Void) async throws
+    func removeModel(_ model: WhisperModelChoice) throws
+    func transcribeAudio(
+        at audioURL: URL,
+        using model: WhisperModelChoice,
+        progress: @escaping @MainActor (Double) -> Void
+    ) async throws -> String
+}
+
+private final class WhisperModelDownloadDelegate: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
+    typealias ProgressHandler = @Sendable (Int64, Int64) -> Void
+
+    private let progressHandler: ProgressHandler
+    private let persistentDownloadURL: URL
+    private var continuation: CheckedContinuation<(URLResponse?, URL), Error>?
+
+    init(progressHandler: @escaping ProgressHandler, persistentDownloadURL: URL) {
+        self.progressHandler = progressHandler
+        self.persistentDownloadURL = persistentDownloadURL
+    }
+
+    func download(using session: URLSession, request: URLRequest) async throws -> (URLResponse?, URL) {
+        try await withCheckedThrowingContinuation { continuation in
+            self.continuation = continuation
+            let task = session.downloadTask(with: request)
+            task.resume()
+        }
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        downloadTask: URLSessionDownloadTask,
+        didWriteData _: Int64,
+        totalBytesWritten: Int64,
+        totalBytesExpectedToWrite: Int64
+    ) {
+        progressHandler(totalBytesWritten, totalBytesExpectedToWrite)
+    }
+
+    func urlSession(_ session: URLSession, downloadTask _: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
+        do {
+            let fileManager = FileManager.default
+            if fileManager.fileExists(atPath: persistentDownloadURL.path) {
+                try fileManager.removeItem(at: persistentDownloadURL)
+            }
+
+            try fileManager.moveItem(at: location, to: persistentDownloadURL)
+        } catch {
+            continuation?.resume(throwing: error)
+            continuation = nil
+            session.invalidateAndCancel()
+        }
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        defer {
+            continuation = nil
+            session.finishTasksAndInvalidate()
+        }
+
+        if let error {
+            continuation?.resume(throwing: error)
+            return
+        }
+
+        guard FileManager.default.fileExists(atPath: persistentDownloadURL.path) else {
+            continuation?.resume(throwing: URLError(.badServerResponse))
+            return
+        }
+
+        continuation?.resume(returning: (task.response, persistentDownloadURL))
+    }
+}
+
+private final class WhisperProgressDelegate: WhisperDelegate {
+    private let progressHandler: @MainActor (Double) -> Void
+
+    init(progressHandler: @escaping @MainActor (Double) -> Void) {
+        self.progressHandler = progressHandler
+    }
+
+    func whisper(_ aWhisper: Whisper, didUpdateProgress progress: Double) {
+        let progressHandler = self.progressHandler
+        Task { @MainActor in
+            progressHandler(progress)
+        }
+    }
 }
 
 @MainActor
@@ -41,39 +127,60 @@ final class WhisperTranscriptionService: TranscriptionServicing {
     }
 
     private let fileManager: FileManager
-    private let modelURL: URL
-    private let modelDownloadURL: URL
-    private let urlSession: URLSession
+    private let modelsDirectoryURL: URL
     private var whisper: Whisper?
+    private var loadedModel: WhisperModelChoice?
+    private var whisperProgressDelegate: WhisperProgressDelegate?
 
     init(
         fileManager: FileManager = .default,
-        modelURL: URL? = nil,
-        modelDownloadURL: URL = URL(string: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin")!,
-        urlSession: URLSession = .shared
+        modelsDirectoryURL: URL? = nil
     ) {
         self.fileManager = fileManager
-        self.modelURL = modelURL ?? Self.defaultModelURL(fileManager: fileManager)
-        self.modelDownloadURL = modelDownloadURL
-        self.urlSession = urlSession
-        Self.ensureModelDirectoryExists(fileManager: fileManager, modelURL: self.modelURL)
+        self.modelsDirectoryURL = modelsDirectoryURL ?? Self.defaultModelsDirectoryURL(fileManager: fileManager)
+        Self.ensureModelDirectoryExists(fileManager: fileManager, directoryURL: self.modelsDirectoryURL)
     }
 
-    func prepare(progress: @escaping @MainActor (String, String?) -> Void) async throws {
+    func installedModels() -> Set<WhisperModelChoice> {
+        Set(WhisperModelChoice.allCases.filter { hasInstalledModel($0) })
+    }
+
+    func prepare(
+        model: WhisperModelChoice,
+        progress: @escaping @MainActor (String, String?) -> Void
+    ) async throws {
+        let modelURL = modelURL(for: model)
         progress(L10n.tr("transcription.progress.checking_local"), modelURL.lastPathComponent)
 
-        if hasInstalledModel() {
+        if hasInstalledModel(model) {
             progress(L10n.tr("transcription.progress.ready"), modelURL.lastPathComponent)
             return
         }
 
         progress(L10n.tr("transcription.progress.downloading_model"), L10n.tr("transcription.progress.happens_once"))
-        try await downloadModel(progress: progress)
+        try await downloadModel(model: model, progress: progress)
         progress(L10n.tr("transcription.progress.ready"), modelURL.lastPathComponent)
     }
 
-    func transcribeAudio(at audioURL: URL) async throws -> String {
-        let whisper = try loadWhisper()
+    func removeModel(_ model: WhisperModelChoice) throws {
+        let modelURL = modelURL(for: model)
+
+        if fileManager.fileExists(atPath: modelURL.path) {
+            try fileManager.removeItem(at: modelURL)
+        }
+
+        if loadedModel == model {
+            whisper = nil
+            loadedModel = nil
+        }
+    }
+
+    func transcribeAudio(
+        at audioURL: URL,
+        using model: WhisperModelChoice,
+        progress: @escaping @MainActor (Double) -> Void
+    ) async throws -> String {
+        let whisper = try loadWhisper(for: model, progress: progress)
         let audioFrames = try loadAudioFrames(from: audioURL)
         let transcription: String = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<String, Error>) in
             whisper.transcribe(audioFrames: audioFrames) { result in
@@ -98,21 +205,49 @@ final class WhisperTranscriptionService: TranscriptionServicing {
         return transcription
     }
 
-    private func loadWhisper() throws -> Whisper {
-        if let whisper {
+    private func loadWhisper(
+        for model: WhisperModelChoice,
+        progress: @escaping @MainActor (Double) -> Void
+    ) throws -> Whisper {
+        if let whisper, loadedModel == model {
+            let progressDelegate = WhisperProgressDelegate(progressHandler: progress)
+            whisper.delegate = progressDelegate
+            whisperProgressDelegate = progressDelegate
             return whisper
         }
 
+        let modelURL = modelURL(for: model)
         guard fileManager.fileExists(atPath: modelURL.path) else {
             throw TranscriptionError.modelNotFound(modelURL)
         }
 
-        let whisper = Whisper(fromFileURL: modelURL)
+        let whisper = Whisper(fromFileURL: modelURL, withParams: makeWhisperParams())
+        let progressDelegate = WhisperProgressDelegate(progressHandler: progress)
+        whisper.delegate = progressDelegate
         self.whisper = whisper
+        loadedModel = model
+        whisperProgressDelegate = progressDelegate
         return whisper
     }
 
-    private func hasInstalledModel() -> Bool {
+    private func makeWhisperParams() -> WhisperParams {
+        let params = WhisperParams(strategy: .greedy)
+        params.language = .auto
+        params.translate = false
+        params.print_progress = false
+        params.print_realtime = false
+        params.print_timestamps = false
+        params.n_threads = Int32(recommendedThreadCount())
+        return params
+    }
+
+    private func recommendedThreadCount() -> Int {
+        let activeCores = max(ProcessInfo.processInfo.activeProcessorCount, 1)
+        return min(max(activeCores, 4), 8)
+    }
+
+    private func hasInstalledModel(_ model: WhisperModelChoice) -> Bool {
+        let modelURL = modelURL(for: model)
         guard let attributes = try? fileManager.attributesOfItem(atPath: modelURL.path),
               let size = attributes[.size] as? NSNumber else {
             return false
@@ -122,47 +257,41 @@ final class WhisperTranscriptionService: TranscriptionServicing {
     }
 
     private func downloadModel(
+        model: WhisperModelChoice,
         progress: @escaping @MainActor (String, String?) -> Void
     ) async throws {
+        let modelURL = modelURL(for: model)
         let temporaryURL = modelURL
             .deletingLastPathComponent()
             .appending(component: "\(modelURL.lastPathComponent).download", directoryHint: .notDirectory)
 
         try? fileManager.removeItem(at: temporaryURL)
-        fileManager.createFile(atPath: temporaryURL.path, contents: nil)
 
         do {
-            let (bytes, response) = try await urlSession.bytes(from: modelDownloadURL)
+            let request = URLRequest(url: model.downloadURL)
+            let delegate = WhisperModelDownloadDelegate(
+                progressHandler: { [weak self] receivedBytes, totalBytes in
+                guard let self else { return }
+
+                Task { @MainActor in
+                    progress(
+                        L10n.tr("transcription.progress.downloading_model"),
+                        self.downloadDetail(receivedBytes: receivedBytes, totalBytes: totalBytes)
+                    )
+                }
+                },
+                persistentDownloadURL: temporaryURL
+            )
+            let session = URLSession(configuration: .default, delegate: delegate, delegateQueue: nil)
+            let (response, downloadedFileURL) = try await delegate.download(using: session, request: request)
+            guard let response else {
+                throw TranscriptionError.modelDownloadFailed(L10n.tr("transcription.error.download_unavailable"))
+            }
             try validateDownloadResponse(response)
 
-            guard let fileHandle = try? FileHandle(forWritingTo: temporaryURL) else {
-                throw TranscriptionError.modelDownloadFailed(L10n.tr("transcription.error.download_failed_disk"))
-            }
-
-            defer {
-                try? fileHandle.close()
-            }
-
-            let totalBytes = max(response.expectedContentLength, 0)
-            var receivedBytes: Int64 = 0
-            var buffer = Data()
-            buffer.reserveCapacity(64 * 1024)
-
-            for try await byte in bytes {
-                buffer.append(byte)
-                if buffer.count >= 64 * 1024 {
-                    try fileHandle.write(contentsOf: buffer)
-                    receivedBytes += Int64(buffer.count)
-                    buffer.removeAll(keepingCapacity: true)
-                    progress(L10n.tr("transcription.progress.downloading_model"), downloadDetail(receivedBytes: receivedBytes, totalBytes: totalBytes))
-                }
-            }
-
-            if !buffer.isEmpty {
-                try fileHandle.write(contentsOf: buffer)
-                receivedBytes += Int64(buffer.count)
-                progress(L10n.tr("transcription.progress.downloading_model"), downloadDetail(receivedBytes: receivedBytes, totalBytes: totalBytes))
-            }
+            let downloadedAttributes = try fileManager.attributesOfItem(atPath: downloadedFileURL.path)
+            let receivedBytes = (downloadedAttributes[.size] as? NSNumber)?.int64Value ?? 0
+            let totalBytes = max(response.expectedContentLength, receivedBytes)
 
             if receivedBytes <= 0 {
                 throw TranscriptionError.invalidModelDownload(modelURL)
@@ -175,8 +304,11 @@ final class WhisperTranscriptionService: TranscriptionServicing {
             if fileManager.fileExists(atPath: modelURL.path) {
                 try fileManager.removeItem(at: modelURL)
             }
-            try fileManager.moveItem(at: temporaryURL, to: modelURL)
-            whisper = nil
+            try fileManager.moveItem(at: downloadedFileURL, to: modelURL)
+            if loadedModel == model {
+                whisper = nil
+                loadedModel = nil
+            }
         } catch let error as TranscriptionError {
             try? fileManager.removeItem(at: temporaryURL)
             throw error
@@ -194,17 +326,30 @@ final class WhisperTranscriptionService: TranscriptionServicing {
     }
 
     private func downloadDetail(receivedBytes: Int64, totalBytes: Int64) -> String? {
+        let transferred = formattedByteCount(receivedBytes)
+
         guard totalBytes > 0 else {
-            return L10n.tr("transcription.error.preparing_local_model")
+            return L10n.format("transcription.progress.download_detail_unknown", transferred)
         }
 
-        let percentage = Int((Double(receivedBytes) / Double(totalBytes)) * 100)
-        return "\(max(0, min(percentage, 100)))%"
+        let total = formattedByteCount(totalBytes)
+        let percentage = max(0, min((Double(receivedBytes) / Double(totalBytes)) * 100, 100))
+        return L10n.format("transcription.progress.download_detail_known", percentage, transferred, total)
     }
 
-    private static func ensureModelDirectoryExists(fileManager: FileManager, modelURL: URL) {
+    private func formattedByteCount(_ bytes: Int64) -> String {
+        let formatter = ByteCountFormatter()
+        formatter.allowedUnits = [.useKB, .useMB, .useGB]
+        formatter.countStyle = .file
+        formatter.includesUnit = true
+        formatter.isAdaptive = true
+        formatter.zeroPadsFractionDigits = false
+        return formatter.string(fromByteCount: max(0, bytes))
+    }
+
+    private static func ensureModelDirectoryExists(fileManager: FileManager, directoryURL: URL) {
         try? fileManager.createDirectory(
-            at: modelURL.deletingLastPathComponent(),
+            at: directoryURL,
             withIntermediateDirectories: true
         )
     }
@@ -262,7 +407,11 @@ final class WhisperTranscriptionService: TranscriptionServicing {
         }
     }
 
-    private static func defaultModelURL(fileManager: FileManager) -> URL {
+    private func modelURL(for model: WhisperModelChoice) -> URL {
+        modelsDirectoryURL.appending(component: model.fileName, directoryHint: .notDirectory)
+    }
+
+    private static func defaultModelsDirectoryURL(fileManager: FileManager) -> URL {
         let appSupportDirectory = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? fileManager.homeDirectoryForCurrentUser
                 .appending(component: "Library", directoryHint: .isDirectory)
@@ -271,6 +420,5 @@ final class WhisperTranscriptionService: TranscriptionServicing {
         return appSupportDirectory
             .appending(component: "Sepharim Sippur", directoryHint: .isDirectory)
             .appending(component: "Models", directoryHint: .isDirectory)
-            .appending(component: "ggml-base.bin", directoryHint: .notDirectory)
     }
 }

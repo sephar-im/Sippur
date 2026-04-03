@@ -6,19 +6,15 @@ protocol LLMPostProcessingServicing {
     func isOllamaInstalled() async -> Bool
 
     func prepare(
-        settings: LLMPostProcessingSettings,
         progress: @escaping @MainActor (String, String?) -> Void
     ) async throws -> LocalLLMModel
 
     func removeModel(
-        settings: LLMPostProcessingSettings,
         progress: @escaping @MainActor (String, String?) -> Void
     ) async throws -> LocalLLMModel
 
     func postProcess(
         transcription: String,
-        exportSettings: ExportSettings,
-        llmSettings: LLMPostProcessingSettings,
         progress: @escaping @MainActor (String, String?) -> Void
     ) async throws -> NoteContent
 }
@@ -71,12 +67,25 @@ final class OllamaPostProcessingService: LLMPostProcessingServicing {
     }
 
     private struct GenerateRequest: Encodable {
+        struct GenerateOptions: Encodable {
+            let temperature: Double
+            let top_p: Double
+            let repeat_penalty: Double
+
+            static let cleanupDefault = GenerateOptions(
+                temperature: 0.15,
+                top_p: 0.9,
+                repeat_penalty: 1.08
+            )
+        }
+
         let model: String
         let prompt: String
         let system: String
         let format: String
         let stream: Bool
         let keep_alive: String
+        let options: GenerateOptions
     }
 
     private struct GenerateResponse: Decodable {
@@ -110,7 +119,6 @@ final class OllamaPostProcessingService: LLMPostProcessingServicing {
     }
 
     func prepare(
-        settings _: LLMPostProcessingSettings,
         progress: @escaping @MainActor (String, String?) -> Void
     ) async throws -> LocalLLMModel {
         let selectedModel = cleanupModel
@@ -136,7 +144,6 @@ final class OllamaPostProcessingService: LLMPostProcessingServicing {
     }
 
     func removeModel(
-        settings _: LLMPostProcessingSettings,
         progress: @escaping @MainActor (String, String?) -> Void
     ) async throws -> LocalLLMModel {
         let selectedModel = cleanupModel
@@ -167,58 +174,46 @@ final class OllamaPostProcessingService: LLMPostProcessingServicing {
 
     func postProcess(
         transcription: String,
-        exportSettings: ExportSettings,
-        llmSettings: LLMPostProcessingSettings,
         progress: @escaping @MainActor (String, String?) -> Void
     ) async throws -> NoteContent {
-        let model = try await prepare(settings: llmSettings, progress: progress)
+        let model = try await prepare(progress: progress)
         progress(L10n.tr("llm.progress.cleaning_transcription"), nil)
 
-        let request = GenerateRequest(
+        var request = GenerateRequest(
             model: model.rawValue,
-            prompt: prompt(
-                transcription: transcription,
-                exportSettings: exportSettings,
-                llmSettings: llmSettings
-            ),
-            system: systemPrompt(
-                exportSettings: exportSettings,
-                llmSettings: llmSettings
-            ),
+            prompt: prompt(transcription: transcription),
+            system: systemPrompt(),
             format: "json",
             stream: false,
-            keep_alive: "5m"
+            keep_alive: "5m",
+            options: .cleanupDefault
         )
 
-        let requestURL = apiBaseURL.appending(path: "/api/generate")
-        var urlRequest = URLRequest(url: requestURL)
-        urlRequest.httpMethod = "POST"
-        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        urlRequest.httpBody = try JSONEncoder().encode(request)
+        var llmResponse = try await generateNoteResponse(for: request)
+        var cleanedBody = llmResponse.body.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        let (data, response) = try await urlSession.data(for: urlRequest)
-        try validateHTTPResponse(response, data: data)
-
-        let generateResponse = try JSONDecoder().decode(GenerateResponse.self, from: data)
-        if let error = generateResponse.error {
-            throw OllamaPostProcessingError.generationFailed(error)
+        if shouldRetryForMoreCleanup(original: transcription, cleaned: cleanedBody) {
+            request = GenerateRequest(
+                model: model.rawValue,
+                prompt: strongerRetryPrompt(
+                    transcription: transcription,
+                    previousResult: cleanedBody
+                ),
+                system: strongerRetrySystemPrompt(),
+                format: "json",
+                stream: false,
+                keep_alive: "5m",
+                options: .cleanupDefault
+            )
+            llmResponse = try await generateNoteResponse(for: request)
+            cleanedBody = llmResponse.body.trimmingCharacters(in: .whitespacesAndNewlines)
         }
 
-        guard let responseData = generateResponse.response.data(using: .utf8) else {
-            throw OllamaPostProcessingError.invalidResponse
-        }
-
-        let llmResponse = try JSONDecoder().decode(LLMNoteResponse.self, from: responseData)
-        let cleanedBody = llmResponse.body.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleanedBody.isEmpty else {
             throw OllamaPostProcessingError.invalidResponse
         }
 
-        let cleanedTitle = llmResponse.title?.trimmingCharacters(in: .whitespacesAndNewlines)
-        return NoteContent(
-            body: cleanedBody,
-            title: cleanedTitle.flatMap { $0.isEmpty ? nil : $0 }
-        )
+        return NoteContent.whisperOnly(body: cleanedBody)
     }
 
     private func locateInstallation() throws -> OllamaInstallation {
@@ -384,54 +379,145 @@ final class OllamaPostProcessingService: LLMPostProcessingServicing {
     }
 
     private func systemPrompt(
-        exportSettings: ExportSettings,
-        llmSettings: LLMPostProcessingSettings
     ) -> String {
-        let allowTitle = llmSettings.generatesTitle && exportSettings.format == .md
-        let allowWikilinks = llmSettings.addsObsidianWikilinks
-            && exportSettings.format == .md
-            && exportSettings.mode == .obsidian
-
         return """
-        You clean short voice note transcriptions into final saved note text.
+        You clean short voice note transcriptions into final saved plain-text notes.
         Preserve the original language of the transcription. Never translate it into English or any other language.
         If the transcription mixes languages, keep that mix only where it already exists.
         Correct only obvious transcription mistakes that are strongly supported by nearby context.
-        Improve punctuation and paragraphing.
+        Improve punctuation, sentence boundaries, capitalization, and paragraph breaks.
+        Split the note into short natural paragraphs whenever the idea or topic shifts.
         Remove filler words, repeated starts, and speech disfluencies only when the intended meaning stays the same.
         When the speaker clearly corrects themselves, keep the final corrected information and remove the superseded draft wording.
+        When a word is misspelled by transcription but the nearby context makes the intended spelling clear, fix it.
+        Keep the writing clean and readable, but do not make it sound more formal than necessary.
         If a term is uncertain, keep the original wording instead of guessing.
-        Do not summarize, invent facts, extract tasks, or add assistant commentary.
+        Do not summarize, invent facts, extract tasks, add bullets, add headings, or add assistant commentary.
+        Do not simply echo the raw transcription when it is clearly messy. Normalize it into readable prose.
         Return valid JSON with keys "title" and "body".
-        The "body" value must contain only the cleaned note body.
-        \(allowTitle ? "Generate a short plain-text title when it is clearly helpful." : "Set title to null.")
-        \(allowWikilinks ? "You may add a small number of Obsidian-style [[wikilinks]] only when they are directly supported by the note." : "Do not use [[wikilinks]].")
+        Set "title" to null.
+        The "body" value must contain only the cleaned plain-text note body.
         """
     }
 
     private func prompt(
-        transcription: String,
-        exportSettings: ExportSettings,
-        llmSettings: LLMPostProcessingSettings
+        transcription: String
     ) -> String {
-        let formatDescription: String
-        switch exportSettings.format {
-        case .txt:
-            formatDescription = "plain text export"
-        case .md:
-            formatDescription = exportSettings.mode == .obsidian ? "Obsidian-friendly markdown export" : "simple markdown export"
-        }
-
         return """
-        Output target: \(formatDescription)
-        Generate title: \(llmSettings.generatesTitle && exportSettings.format == .md ? "yes" : "no")
-        Add Obsidian wikilinks: \(llmSettings.addsObsidianWikilinks && exportSettings.mode == .obsidian && exportSettings.format == .md ? "yes" : "no")
+        Output target: plain text export
+        Generate title: no
+        Add Obsidian wikilinks: no
         Keep the same language as the raw transcription: yes
         Prefer final self-corrections over earlier mistaken wording: yes
+        Clean up punctuation and paragraphing: yes
+        If the transcription is messy, do not keep it almost unchanged.
+
+        Example 1
+        Raw: mañana tengo que ir a las cinco al dentista ah no era a las ocho
+        Body: Mañana tengo que ir al dentista a las ocho.
+
+        Example 2
+        Raw: vale vamos a ver si está funcionando parece que sí el costo de envío sería unos 200 yen perdón no esto es 2500 yen no 2800 vale gracias
+        Body: Vale, vamos a ver si está funcionando. Parece que sí.
+
+        El costo de envío sería de 2.800 yen. Gracias.
 
         Raw transcription:
         \(transcription)
         """
+    }
+
+    private func strongerRetrySystemPrompt() -> String {
+        """
+        You are doing a second cleanup pass because the first result stayed too close to the raw transcript.
+        Be more decisive about punctuation, capitalization, paragraphing, filler removal, and obvious speech repairs.
+        Preserve the original language and meaning.
+        Keep explicit self-corrections and final numbers, times, and dates.
+        Do not translate, summarize, invent facts, add bullets, or add headings.
+        Return valid JSON with keys "title" and "body".
+        Set "title" to null.
+        The "body" value must contain only the cleaned plain-text note body.
+        """
+    }
+
+    private func strongerRetryPrompt(transcription: String, previousResult: String) -> String {
+        """
+        The previous cleanup stayed too close to the raw transcript.
+        Clean the text more actively while preserving meaning.
+        Add punctuation and capitalization.
+        Break into short paragraphs when the idea changes.
+        Remove filler words and false starts when safe.
+        Keep the final corrected wording when the speaker revises themselves.
+        If a number or term is explicitly corrected later, use the final corrected version.
+
+        Raw transcription:
+        \(transcription)
+
+        Previous cleanup result:
+        \(previousResult)
+        """
+    }
+
+    private func generateNoteResponse(for request: GenerateRequest) async throws -> LLMNoteResponse {
+        let requestURL = apiBaseURL.appending(path: "/api/generate")
+        var urlRequest = URLRequest(url: requestURL)
+        urlRequest.httpMethod = "POST"
+        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        urlRequest.httpBody = try JSONEncoder().encode(request)
+
+        let (data, response) = try await urlSession.data(for: urlRequest)
+        try validateHTTPResponse(response, data: data)
+
+        let generateResponse = try JSONDecoder().decode(GenerateResponse.self, from: data)
+        if let error = generateResponse.error {
+            throw OllamaPostProcessingError.generationFailed(error)
+        }
+
+        guard let responseData = generateResponse.response.data(using: .utf8) else {
+            throw OllamaPostProcessingError.invalidResponse
+        }
+
+        return try JSONDecoder().decode(LLMNoteResponse.self, from: responseData)
+    }
+
+    private func shouldRetryForMoreCleanup(original: String, cleaned: String) -> Bool {
+        let normalizedOriginal = normalizedForComparison(original)
+        let normalizedCleaned = normalizedForComparison(cleaned)
+
+        guard normalizedOriginal == normalizedCleaned else {
+            return false
+        }
+
+        let lowercased = normalizedOriginal.lowercased()
+        let wordCount = normalizedOriginal.split(whereSeparator: \.isWhitespace).count
+        let punctuationCharacters = CharacterSet(charactersIn: ".?!;:\n")
+        let punctuationCount = normalizedOriginal.unicodeScalars.filter { punctuationCharacters.contains($0) }.count
+
+        let repairMarkers = [
+            "ah no",
+            "perdón",
+            "no no",
+            "o sea",
+            "vale",
+            "eh",
+            "umm",
+            "uh",
+            "sorry",
+            "actually",
+            "i mean",
+        ]
+
+        let hasRepairMarker = repairMarkers.contains { lowercased.contains($0) }
+        let looksUnderPunctuated = wordCount >= 12 && punctuationCount <= 1
+
+        return hasRepairMarker || looksUnderPunctuated
+    }
+
+    private func normalizedForComparison(_ text: String) -> String {
+        text
+            .split(whereSeparator: \.isWhitespace)
+            .joined(separator: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private static func appBundleURL(containing executableURL: URL) -> URL? {

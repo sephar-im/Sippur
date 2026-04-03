@@ -5,36 +5,21 @@ import AppKit
 final class SettingsStore: ObservableObject {
     private enum Keys {
         static let outputFolderPath = "outputFolderPath"
-        static let outputFormat = "outputFormat"
-        static let outputMode = "outputMode"
+        static let whisperModel = "whisperModel"
         static let copySavedNoteToClipboard = "copySavedNoteToClipboard"
         static let hasSeenFirstUseHelp = "hasSeenFirstUseHelp"
         static let hasSeenLLMCleanupHelp = "hasSeenLLMCleanupHelp"
-        static let llmPostProcessingEnabled = "llmPostProcessingEnabled"
         static let legacyPreferredLLMModel = "preferredLLMModel"
         static let shortcutKeyCode = "shortcutKeyCode"
         static let shortcutCarbonModifiers = "shortcutCarbonModifiers"
         static let shortcutDisplayName = "shortcutDisplayName"
     }
 
-    @Published var outputFormat: OutputFormat {
-        didSet {
-            userDefaults.set(outputFormat.rawValue, forKey: Keys.outputFormat)
-        }
-    }
-
-    @Published var outputMode: OutputMode {
-        didSet {
-            userDefaults.set(outputMode.rawValue, forKey: Keys.outputMode)
-        }
-    }
-
     @Published private(set) var outputFolderURL: URL
     @Published private(set) var globalShortcut: GlobalShortcutMonitor.Shortcut?
-
-    @Published var isLLMPostProcessingEnabled: Bool {
+    @Published var whisperModel: WhisperModelChoice {
         didSet {
-            userDefaults.set(isLLMPostProcessingEnabled, forKey: Keys.llmPostProcessingEnabled)
+            userDefaults.set(whisperModel.rawValue, forKey: Keys.whisperModel)
         }
     }
 
@@ -71,8 +56,7 @@ final class SettingsStore: ObservableObject {
         let defaultFolder = defaultOutputFolderURL ?? Self.defaultOutputFolder(fileManager: fileManager)
 
         outputFolderURL = storedPath.map(URL.init(fileURLWithPath:)) ?? defaultFolder
-        outputFormat = OutputFormat(rawValue: userDefaults.string(forKey: Keys.outputFormat) ?? "") ?? .md
-        outputMode = OutputMode(rawValue: userDefaults.string(forKey: Keys.outputMode) ?? "") ?? .normal
+        whisperModel = WhisperModelChoice(rawValue: userDefaults.string(forKey: Keys.whisperModel) ?? "") ?? .medium
         if let storedKeyCode = userDefaults.object(forKey: Keys.shortcutKeyCode) as? NSNumber,
            let storedModifiers = userDefaults.object(forKey: Keys.shortcutCarbonModifiers) as? NSNumber,
            let storedDisplayName = userDefaults.string(forKey: Keys.shortcutDisplayName) {
@@ -84,23 +68,21 @@ final class SettingsStore: ObservableObject {
         } else {
             globalShortcut = nil
         }
-        isLLMPostProcessingEnabled = userDefaults.bool(forKey: Keys.llmPostProcessingEnabled)
         copySavedNoteToClipboard = userDefaults.bool(forKey: Keys.copySavedNoteToClipboard)
         hasSeenFirstUseHelp = userDefaults.bool(forKey: Keys.hasSeenFirstUseHelp)
         hasSeenLLMCleanupHelp = userDefaults.bool(forKey: Keys.hasSeenLLMCleanupHelp)
 
         userDefaults.removeObject(forKey: Keys.legacyPreferredLLMModel)
+        userDefaults.removeObject(forKey: "llmPostProcessingEnabled")
+        userDefaults.removeObject(forKey: "outputFormat")
+        userDefaults.removeObject(forKey: "outputMode")
 
         ensureOutputFolderExists()
         persistOutputFolder()
     }
 
     var exportSettings: ExportSettings {
-        ExportSettings(
-            folderURL: outputFolderURL,
-            format: outputFormat,
-            mode: outputMode
-        )
+        ExportSettings(folderURL: outputFolderURL)
     }
 
     var outputFolderPath: String {
@@ -111,12 +93,8 @@ final class SettingsStore: ObservableObject {
         globalShortcut?.displayName ?? L10n.tr("global_shortcut.not_set")
     }
 
-    var llmPostProcessingSettings: LLMPostProcessingSettings {
-        LLMPostProcessingSettings(
-            isEnabled: isLLMPostProcessingEnabled,
-            generatesTitle: outputFormat == .md,
-            addsObsidianWikilinks: outputFormat == .md && outputMode == .obsidian
-        )
+    func setWhisperModel(_ model: WhisperModelChoice) {
+        whisperModel = model
     }
 
     func chooseOutputFolder() {

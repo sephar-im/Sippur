@@ -6,14 +6,17 @@ struct SettingsSectionsView: View {
 
     let setGlobalShortcut: (GlobalShortcutMonitor.Shortcut?) -> Void
     let showsFirstUseHelp: Bool
-    let showsModeExplanation: Bool
     let showsAdvancedLLMControls: Bool
 
-    private var llmEnabledBinding: Binding<Bool> {
+    private var whisperModelBinding: Binding<WhisperModelChoice> {
         Binding(
-            get: { settings.isLLMPostProcessingEnabled },
-            set: { model.setLLMPostProcessingEnabled($0) }
+            get: { settings.whisperModel },
+            set: { model.setWhisperModel($0) }
         )
+    }
+
+    private var whisperControlsDisabled: Bool {
+        model.isBootstrappingDependencies || model.phase == .recording || model.phase == .processing
     }
 
     var body: some View {
@@ -59,26 +62,10 @@ struct SettingsSectionsView: View {
                     .textSelection(.enabled)
                     .lineLimit(2)
 
-                Picker(L10n.tr("settings.notes.format"), selection: $settings.outputFormat) {
-                    ForEach(OutputFormat.allCases) { format in
-                        Text(format.label).tag(format)
-                    }
-                }
-                .pickerStyle(.segmented)
-
-                Picker(L10n.tr("settings.notes.mode"), selection: $settings.outputMode) {
-                    ForEach(OutputMode.allCases) { mode in
-                        Text(mode.label).tag(mode)
-                    }
-                }
-                .pickerStyle(.segmented)
-
-                if showsModeExplanation {
-                    Text(modeExplanationText)
-                        .font(.system(size: 11, weight: .regular, design: .rounded))
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+                Text(L10n.tr("settings.notes.saved_as_txt"))
+                    .font(.system(size: 11, weight: .regular, design: .rounded))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
 
                 Toggle(L10n.tr("settings.notes.copy_saved_text_to_clipboard"), isOn: $settings.copySavedNoteToClipboard)
                     .toggleStyle(.switch)
@@ -99,12 +86,35 @@ struct SettingsSectionsView: View {
                 }
             }
 
-            section(L10n.tr("settings.section.llm")) {
-                Button(settings.isLLMPostProcessingEnabled ? L10n.tr("settings.llm.disable") : L10n.tr("settings.llm.enable")) {
-                    llmEnabledBinding.wrappedValue.toggle()
+            section(L10n.tr("settings.section.whisper")) {
+                Picker(L10n.tr("settings.whisper.model"), selection: whisperModelBinding) {
+                    ForEach(WhisperModelChoice.allCases) { model in
+                        Text(model.displayLabel).tag(model)
+                    }
                 }
+                .pickerStyle(.menu)
+                .disabled(whisperControlsDisabled)
 
-                if settings.isLLMPostProcessingEnabled, !settings.hasSeenLLMCleanupHelp {
+                Text(model.whisperStatusText)
+                    .font(.system(size: 11, weight: .regular, design: .rounded))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if model.isSelectedWhisperModelInstalled {
+                    Button(L10n.tr("settings.whisper.remove_selected_model")) {
+                        model.removeSelectedWhisperModel()
+                    }
+                    .disabled(whisperControlsDisabled)
+                } else {
+                    Button(L10n.tr("settings.whisper.download_selected_model")) {
+                        model.downloadSelectedWhisperModel()
+                    }
+                    .disabled(whisperControlsDisabled)
+                }
+            }
+
+            section(L10n.tr("settings.section.llm")) {
+                if !settings.hasSeenLLMCleanupHelp {
                     VStack(alignment: .leading, spacing: 6) {
                         Text(L10n.tr("settings.llm.help_title"))
                             .font(.system(size: 12, weight: .semibold, design: .rounded))
@@ -122,12 +132,24 @@ struct SettingsSectionsView: View {
                     .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                 }
 
+                Button(L10n.tr("settings.llm.fix_last_text")) {
+                    model.fixLastSavedNote()
+                }
+                .disabled(model.lastSavedNoteURL == nil || model.phase == .recording || model.phase == .processing || model.isPreparingLLM)
+
                 Text(model.llmStatusText)
                     .font(.system(size: 11, weight: .regular, design: .rounded))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
 
-                if showsAdvancedLLMControls, settings.isLLMPostProcessingEnabled {
+                if model.lastSavedNoteURL == nil {
+                    Text(L10n.tr("settings.llm.no_saved_note"))
+                        .font(.system(size: 11, weight: .regular, design: .rounded))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                if showsAdvancedLLMControls {
                     if model.isOllamaInstalled, model.preparedLLMModel != nil {
                         Text(L10n.format("settings.llm.uses_model", LocalLLMModel.cleanupModel.label))
                             .font(.system(size: 11, weight: .regular, design: .rounded))
@@ -151,15 +173,6 @@ struct SettingsSectionsView: View {
                     }
                 }
             }
-        }
-    }
-
-    private var modeExplanationText: String {
-        switch settings.outputMode {
-        case .normal:
-            return L10n.tr("settings.mode.explanation.normal")
-        case .obsidian:
-            return L10n.tr("settings.mode.explanation.obsidian")
         }
     }
 

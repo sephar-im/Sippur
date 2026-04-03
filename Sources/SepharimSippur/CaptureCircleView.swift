@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct CaptureCircleView: View {
+    static let panelSize: CGFloat = 104
+
     let phase: CapturePhase
     let isEnabled: Bool
 
@@ -18,11 +20,11 @@ struct CaptureCircleView: View {
                             Color.black.opacity(0.92),
                         ],
                         center: .center,
-                        startRadius: 10,
-                        endRadius: 96
+                        startRadius: 6,
+                        endRadius: 54
                     )
                 )
-                .frame(width: 156, height: 156)
+                .frame(width: 88, height: 88)
                 .overlay {
                     Circle()
                         .stroke(Color.white.opacity(0.14), lineWidth: 1)
@@ -33,14 +35,14 @@ struct CaptureCircleView: View {
                 .trim(from: phase.outerRingTrimRange.lowerBound, to: phase.outerRingTrimRange.upperBound)
                 .stroke(
                     glowColor.opacity(ringOpacity),
-                    style: StrokeStyle(lineWidth: 10, lineCap: .round)
+                    style: StrokeStyle(lineWidth: 6, lineCap: .round)
                 )
-                .frame(width: 172, height: 172)
+                .frame(width: 98, height: 98)
                 .rotationEffect(.degrees(phase.shouldSpinRing ? (spinRing ? 360 : 0) : 0))
 
             symbolView
         }
-        .frame(width: 184, height: 184)
+        .frame(width: Self.panelSize, height: Self.panelSize)
         .disabled(!isEnabled)
         .opacity(isEnabled ? 1.0 : 0.88)
         .animation(.easeInOut(duration: 0.24), value: phase)
@@ -55,9 +57,9 @@ struct CaptureCircleView: View {
     private var baseFillColor: Color {
         switch phase {
         case .idle:
-            return Color(red: 0.90, green: 0.22, blue: 0.26)
+            return Color(red: 1.0, green: 0.0, blue: 0.0)
         case .recording:
-            return Color(red: 0.96, green: 0.18, blue: 0.22)
+            return Color(red: 1.0, green: 0.0, blue: 0.0)
         case .processing:
             return Color(red: 0.92, green: 0.66, blue: 0.20)
         case .success:
@@ -91,16 +93,16 @@ struct CaptureCircleView: View {
         switch phase {
         case .processing:
             ProgressView()
-                .controlSize(.regular)
+                .controlSize(.small)
                 .tint(.white)
-                .scaleEffect(1.2)
+                .scaleEffect(0.95)
         case .success:
             Image(systemName: "checkmark")
-                .font(.system(size: 34, weight: .bold, design: .rounded))
+                .font(.system(size: 20, weight: .bold, design: .rounded))
                 .foregroundStyle(.white)
         case .error:
             Image(systemName: "arrow.clockwise")
-                .font(.system(size: 34, weight: .bold, design: .rounded))
+                .font(.system(size: 20, weight: .bold, design: .rounded))
                 .foregroundStyle(.white)
         case .idle, .recording:
             EmptyView()

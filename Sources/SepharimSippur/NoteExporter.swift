@@ -2,6 +2,7 @@ import Foundation
 
 protocol NoteExporting {
     func saveNote(content: NoteContent, using settings: ExportSettings, date: Date) throws -> URL
+    func saveFixedNote(content: NoteContent, basedOn originalNoteURL: URL) throws -> URL
 }
 
 struct NoteExporter: NoteExporting {
@@ -33,6 +34,14 @@ struct NoteExporter: NoteExporting {
         return fileURL
     }
 
+    func saveFixedNote(content: NoteContent, basedOn originalNoteURL: URL) throws -> URL {
+        let outputFolderURL = try prepareOutputFolder(at: originalNoteURL.deletingLastPathComponent())
+        let draft = buildFixedNoteDraft(content: content, basedOn: originalNoteURL)
+        let fileURL = try resolvedOutputURL(for: draft, in: outputFolderURL)
+        try draft.contents.write(to: fileURL, atomically: true, encoding: .utf8)
+        return fileURL
+    }
+
     func buildNoteDraft(
         content: NoteContent,
         using settings: ExportSettings,
@@ -41,57 +50,23 @@ struct NoteExporter: NoteExporting {
         locale: Locale = Locale(identifier: "en_US_POSIX")
     ) -> NoteDraft {
         let fileTimestamp = formatted(date: date, pattern: "yyyy-MM-dd HH-mm-ss", timeZone: timeZone, locale: locale)
-        let displayTimestamp = formatted(date: date, pattern: "yyyy-MM-dd HH:mm:ss", timeZone: timeZone, locale: locale)
-        let cleanContent = NoteContent(
-            body: content.body.trimmingCharacters(in: .whitespacesAndNewlines),
-            title: content.title?.trimmingCharacters(in: .whitespacesAndNewlines)
-        )
+        let cleanBody = content.body.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        switch settings.format {
-        case .txt:
-            return NoteDraft(
-                fileName: "\(fileTimestamp).txt",
-                contents: cleanContent.body + "\n"
-            )
-        case .md:
-            return NoteDraft(
-                fileName: "\(fileTimestamp).md",
-                contents: markdownContents(
-                    content: cleanContent,
-                    mode: settings.mode,
-                    displayTimestamp: displayTimestamp
-                ) + "\n"
-            )
-        }
+        return NoteDraft(
+            fileName: "\(fileTimestamp).txt",
+            contents: cleanBody + "\n"
+        )
     }
 
-    private func markdownContents(
-        content: NoteContent,
-        mode: OutputMode,
-        displayTimestamp: String
-    ) -> String {
-        switch mode {
-        case .normal:
-            let title = content.title.flatMap { $0.isEmpty ? nil : $0 } ?? L10n.tr("note_export.default_title")
-            return """
-            # \(title)
+    func buildFixedNoteDraft(content: NoteContent, basedOn originalNoteURL: URL) -> NoteDraft {
+        let cleanBody = content.body.trimmingCharacters(in: .whitespacesAndNewlines)
+        let originalBaseName = originalNoteURL.deletingPathExtension().lastPathComponent
+        let normalizedBaseName = normalizedFixedBaseName(from: originalBaseName)
 
-            \(L10n.tr("note_export.date_label")): \(displayTimestamp)
-
-            \(content.body)
-            """
-        case .obsidian:
-            let title = content.title.flatMap { $0.isEmpty ? nil : $0 } ?? displayTimestamp
-            return """
-            ---
-            created: \(displayTimestamp)
-            ---
-
-            # \(title)
-
-            \(content.body)
-            """
-        }
+        return NoteDraft(
+            fileName: "\(normalizedBaseName) fixed.txt",
+            contents: cleanBody + "\n"
+        )
     }
 
     private func prepareOutputFolder(at folderURL: URL) throws -> URL {
@@ -131,6 +106,14 @@ struct NoteExporter: NoteExporting {
         }
 
         throw NoteExportError.couldNotAllocateUniqueFileName(baseURL)
+    }
+
+    private func normalizedFixedBaseName(from baseName: String) -> String {
+        baseName.replacingOccurrences(
+            of: #" fixed(?: \d{2})?$"#,
+            with: "",
+            options: .regularExpression
+        )
     }
 
     private func formatted(

@@ -36,8 +36,16 @@ struct MenuBarContentView: View {
                         .fixedSize(horizontal: false, vertical: true)
 
                     if model.hasBlockingSetupFailure {
-                        Button(L10n.tr("menu.retry_setup")) {
-                            model.retryDependencyBootstrap()
+                        Button(
+                            model.isSelectedWhisperModelInstalled
+                                ? L10n.tr("menu.retry_setup")
+                                : L10n.tr("settings.whisper.download_selected_model")
+                        ) {
+                            if model.isSelectedWhisperModelInstalled {
+                                model.retryDependencyBootstrap()
+                            } else {
+                                model.downloadSelectedWhisperModel()
+                            }
                         }
                     }
                 }
@@ -50,18 +58,8 @@ struct MenuBarContentView: View {
                 settings: settings,
                 setGlobalShortcut: setGlobalShortcut,
                 showsFirstUseHelp: true,
-                showsModeExplanation: false,
                 showsAdvancedLLMControls: false
             )
-
-            if settings.isLLMPostProcessingEnabled,
-               model.isCaptureReady,
-               !model.isPreparingLLM,
-               !model.isLLMReady {
-                Button(L10n.tr("menu.retry_llm_setup")) {
-                    model.retryLLMSetup()
-                }
-            }
 
             Divider()
 

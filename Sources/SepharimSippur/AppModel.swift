@@ -15,7 +15,9 @@ final class AppModel: ObservableObject {
     @Published private(set) var isCaptureReady = false
     @Published private(set) var isBootstrappingDependencies = false
     @Published private(set) var hasBlockingSetupFailure = false
-    @Published private(set) var llmStatusText = L10n.tr("app.llm.disabled")
+    @Published private(set) var whisperStatusText = ""
+    @Published private(set) var installedWhisperModels: Set<WhisperModelChoice> = []
+    @Published private(set) var llmStatusText = L10n.format("app.llm.manual_fix_available", LocalLLMModel.cleanupModel.label)
     @Published private(set) var isPreparingLLM = false
     @Published private(set) var isOllamaInstalled = false
     @Published private(set) var preparedLLMModel: LocalLLMModel?
@@ -50,13 +52,11 @@ final class AppModel: ObservableObject {
             self?.transitionToError(error.localizedDescription)
         }
 
-        if settings.isLLMPostProcessingEnabled {
-            llmStatusText = L10n.format("app.llm.setup_after_transcription", LocalLLMModel.cleanupModel.label)
-        }
+        refreshWhisperAvailability()
     }
 
-    var isLLMReady: Bool {
-        preparedLLMModel != nil
+    var isSelectedWhisperModelInstalled: Bool {
+        installedWhisperModels.contains(settings.whisperModel)
     }
 
     func requestCaptureToggle() {
@@ -71,48 +71,35 @@ final class AppModel: ObservableObject {
 
         await refreshLLMAvailability()
         await bootstrapRequiredDependencies()
-
-        if isCaptureReady, settings.llmPostProcessingSettings.isEnabled {
-            await prepareLLMIfNeeded()
-        }
     }
 
     func retryDependencyBootstrap() {
         Task {
-            await refreshLLMAvailability()
-            await bootstrapRequiredDependencies()
-
-            if isCaptureReady, settings.llmPostProcessingSettings.isEnabled {
-                await prepareLLMIfNeeded()
-            }
+            await downloadSelectedWhisperModelIfNeeded()
         }
     }
 
-    func setLLMPostProcessingEnabled(_ isEnabled: Bool) {
-        settings.isLLMPostProcessingEnabled = isEnabled
-        if !isEnabled {
-            llmStatusText = L10n.tr("app.llm.disabled")
-            isPreparingLLM = false
-            return
-        }
+    func setWhisperModel(_ model: WhisperModelChoice) {
+        guard settings.whisperModel != model else { return }
+        settings.setWhisperModel(model)
+        refreshWhisperAvailability()
+    }
 
-        guard isCaptureReady else {
-            llmStatusText = L10n.format("app.llm.setup_after_transcription", LocalLLMModel.cleanupModel.label)
-            return
-        }
-
+    func downloadSelectedWhisperModel() {
         Task {
-            await refreshLLMAvailability()
-            await prepareLLMIfNeeded()
+            await downloadSelectedWhisperModelIfNeeded()
         }
     }
 
-    func retryLLMSetup() {
-        guard settings.llmPostProcessingSettings.isEnabled, isCaptureReady else { return }
+    func removeSelectedWhisperModel() {
+        guard !isBootstrappingDependencies else { return }
+        guard phase != .recording, phase != .processing else { return }
 
-        Task {
-            await refreshLLMAvailability()
-            await prepareLLMIfNeeded()
+        do {
+            try transcriptionService.removeModel(settings.whisperModel)
+            refreshWhisperAvailability()
+        } catch {
+            transitionToError(error.localizedDescription)
         }
     }
 
@@ -121,6 +108,19 @@ final class AppModel: ObservableObject {
 
         Task {
             await removeSelectedLLM()
+        }
+    }
+
+    func fixLastSavedNote() {
+        guard !isPreparingLLM else { return }
+        guard phase != .recording, phase != .processing else { return }
+        guard lastSavedNoteURL != nil else {
+            llmStatusText = L10n.tr("app.llm.no_saved_note")
+            return
+        }
+
+        Task {
+            await fixLastSavedNoteIfNeeded()
         }
     }
 
@@ -156,7 +156,6 @@ final class AppModel: ObservableObject {
 
         do {
             _ = try recordingService.startRecording()
-            clearSessionArtifacts()
             phase = .recording
             statusText = L10n.tr("app.status.listening")
             detailText = L10n.tr("app.detail.speak_finish")
@@ -179,36 +178,15 @@ final class AppModel: ObservableObject {
             statusText = L10n.tr("app.status.transcribing_whisper")
             detailText = L10n.tr("app.detail.turning_speech_into_text")
 
-            let transcription = try await transcriptionService.transcribeAudio(at: recordingURL)
-            var noteContent = NoteContent.whisperOnly(body: transcription)
-            var usedLLMFallback = false
-
-            if settings.llmPostProcessingSettings.isEnabled {
-                do {
-                    noteContent = try await llmPostProcessingService.postProcess(
-                        transcription: transcription,
-                        exportSettings: settings.exportSettings,
-                        llmSettings: settings.llmPostProcessingSettings,
-                        progress: { [weak self] summary, detail in
-                            self?.isPreparingLLM = true
-                            self?.llmStatusText = summary
-                            self?.statusText = summary
-                            if let detail {
-                                self?.detailText = detail
-                            }
-                        }
-                    )
-                    preparedLLMModel = .cleanupModel
-                    llmStatusText = L10n.format("app.llm.ready_model", LocalLLMModel.cleanupModel.label)
-                } catch {
-                    usedLLMFallback = true
-                    noteContent = .whisperOnly(body: transcription)
-                    preparedLLMModel = nil
-                    llmStatusText = L10n.tr("app.llm.unavailable_fallback")
+            let transcription = try await transcriptionService.transcribeAudio(
+                at: recordingURL,
+                using: settings.whisperModel,
+                progress: { [weak self] progress in
+                    let percentage = Int(max(0, min(progress * 100, 100)).rounded())
+                    self?.detailText = L10n.format("app.detail.whisper_progress", percentage)
                 }
-            }
-
-            isPreparingLLM = false
+            )
+            let noteContent = NoteContent.whisperOnly(body: transcription)
             statusText = L10n.tr("app.status.saving_note")
             detailText = settings.outputFolderURL.path
 
@@ -224,15 +202,9 @@ final class AppModel: ObservableObject {
 
             lastSavedNoteURL = noteURL
             phase = .success
-            if usedLLMFallback {
-                statusText = settings.copySavedNoteToClipboard
-                    ? L10n.format("app.status.saved_and_copied", noteURL.lastPathComponent)
-                    : L10n.format("app.status.saved_whisper_only", noteURL.lastPathComponent)
-            } else {
-                statusText = settings.copySavedNoteToClipboard
-                    ? L10n.format("app.status.saved_and_copied", noteURL.lastPathComponent)
-                    : L10n.format("app.status.saved", noteURL.lastPathComponent)
-            }
+            statusText = settings.copySavedNoteToClipboard
+                ? L10n.format("app.status.saved_and_copied", noteURL.lastPathComponent)
+                : L10n.format("app.status.saved", noteURL.lastPathComponent)
             detailText = noteURL.path
             settings.markFirstUseHelpSeen()
             scheduleReturnToIdleAfterSuccess()
@@ -242,10 +214,6 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private func clearSessionArtifacts() {
-        lastSavedNoteURL = nil
-    }
-
     private func scheduleReturnToIdleAfterSuccess() {
         cancelPendingSuccessReset()
 
@@ -253,9 +221,7 @@ final class AppModel: ObservableObject {
             try? await Task.sleep(nanoseconds: 1_200_000_000)
 
             guard let self, phase == .success else { return }
-            phase = .idle
-            statusText = idleStatusText
-            detailText = idleDetailText
+            refreshWhisperAvailability()
         }
     }
 
@@ -266,41 +232,18 @@ final class AppModel: ObservableObject {
 
     private func bootstrapRequiredDependencies() async {
         guard !isBootstrappingDependencies else { return }
-
-        isBootstrappingDependencies = true
-        hasBlockingSetupFailure = false
-        phase = .processing
-        statusText = L10n.tr("app.status.preparing_local_transcription")
-        detailText = L10n.tr("app.detail.checking_whisper_assets")
-
-        do {
-            try await transcriptionService.prepare(
-                progress: { [weak self] summary, detail in
-                    self?.statusText = summary
-                    if let detail {
-                        self?.detailText = detail
-                    }
-                }
-            )
-
-            isCaptureReady = true
-            hasBlockingSetupFailure = false
-            phase = .idle
-            statusText = idleStatusText
-            detailText = idleDetailText
-        } catch {
-            isCaptureReady = false
-            hasBlockingSetupFailure = true
-            phase = .error
-            statusText = error.localizedDescription
-            detailText = bootstrapFailureDetailText
-        }
-
-        isBootstrappingDependencies = false
+        refreshWhisperAvailability()
     }
 
     private func refreshLLMAvailability() async {
         isOllamaInstalled = await llmPostProcessingService.isOllamaInstalled()
+        if preparedLLMModel != nil {
+            llmStatusText = L10n.format("app.llm.ready_model", LocalLLMModel.cleanupModel.label)
+        } else if isOllamaInstalled {
+            llmStatusText = L10n.format("app.llm.manual_fix_available", LocalLLMModel.cleanupModel.label)
+        } else {
+            llmStatusText = L10n.tr("app.llm.install_ollama")
+        }
     }
 
     private func transitionToError(_ message: String) {
@@ -310,48 +253,18 @@ final class AppModel: ObservableObject {
         detailText = recoverableErrorDetailText
     }
 
-    private func prepareLLMIfNeeded() async {
-        guard settings.llmPostProcessingSettings.isEnabled else {
-            llmStatusText = L10n.tr("app.llm.disabled")
-            isPreparingLLM = false
-            return
-        }
-
-        guard !isPreparingLLM else { return }
-        isPreparingLLM = true
-
-        do {
-            let preparedModel = try await llmPostProcessingService.prepare(
-                settings: settings.llmPostProcessingSettings,
-                progress: { [weak self] summary, detail in
-                    self?.llmStatusText = summary
-                    _ = detail
-                }
-            )
-            self.preparedLLMModel = preparedModel
-            llmStatusText = L10n.format("app.llm.ready_model", preparedModel.label)
-        } catch {
-            preparedLLMModel = nil
-            llmStatusText = L10n.tr("app.llm.unavailable_fallback")
-        }
-
-        isPreparingLLM = false
-    }
-
     private func removeSelectedLLM() async {
         isPreparingLLM = true
 
         do {
             let removedModel = try await llmPostProcessingService.removeModel(
-                settings: settings.llmPostProcessingSettings,
                 progress: { [weak self] summary, detail in
                     self?.llmStatusText = summary
                     _ = detail
                 }
             )
             preparedLLMModel = nil
-            settings.isLLMPostProcessingEnabled = false
-            llmStatusText = L10n.format("app.llm.removed_and_disabled", removedModel.label)
+            llmStatusText = L10n.format("app.llm.removed_model", removedModel.label)
         } catch {
             llmStatusText = error.localizedDescription
         }
@@ -365,5 +278,158 @@ final class AppModel: ObservableObject {
 
     private func cleanupTemporaryAudio(at url: URL) {
         try? FileManager.default.removeItem(at: url)
+    }
+
+    private func downloadSelectedWhisperModelIfNeeded() async {
+        guard !isBootstrappingDependencies else { return }
+
+        if isSelectedWhisperModelInstalled {
+            refreshWhisperAvailability()
+            return
+        }
+
+        cancelPendingSuccessReset()
+        isBootstrappingDependencies = true
+        hasBlockingSetupFailure = false
+        phase = .processing
+        statusText = L10n.format("app.whisper.preparing_model", settings.whisperModel.title)
+        detailText = settings.whisperModel.fileName
+
+        defer {
+            isBootstrappingDependencies = false
+        }
+
+        do {
+            try await transcriptionService.prepare(
+                model: settings.whisperModel,
+                progress: { [weak self] summary, detail in
+                    self?.statusText = summary
+                    if let detail {
+                        self?.detailText = detail
+                    }
+                }
+            )
+
+            refreshWhisperAvailability()
+
+            if isCaptureReady {
+                phase = .idle
+                statusText = idleStatusText
+                detailText = idleDetailText
+            }
+        } catch {
+            refreshWhisperAvailability()
+            statusText = error.localizedDescription
+            detailText = bootstrapFailureDetailText
+        }
+    }
+
+    private func refreshWhisperAvailability() {
+        installedWhisperModels = transcriptionService.installedModels()
+
+        if installedWhisperModels.contains(settings.whisperModel) {
+            whisperStatusText = L10n.format(
+                "app.whisper.model_ready",
+                settings.whisperModel.title,
+                settings.whisperModel.approximateSize
+            )
+
+            isCaptureReady = true
+            hasBlockingSetupFailure = false
+
+            if phase != .recording, phase != .processing {
+                phase = .idle
+                statusText = idleStatusText
+                detailText = idleDetailText
+            }
+        } else {
+            whisperStatusText = L10n.format(
+                "app.whisper.model_missing",
+                settings.whisperModel.title,
+                settings.whisperModel.approximateSize
+            )
+
+            isCaptureReady = false
+            hasBlockingSetupFailure = true
+
+            if phase != .recording, phase != .processing {
+                phase = .error
+                statusText = L10n.format("app.whisper.not_ready", settings.whisperModel.title)
+                detailText = L10n.tr("app.whisper.choose_and_download")
+            }
+        }
+    }
+
+    private func fixLastSavedNoteIfNeeded() async {
+        guard let originalNoteURL = lastSavedNoteURL else {
+            llmStatusText = L10n.tr("app.llm.no_saved_note")
+            return
+        }
+
+        cancelPendingSuccessReset()
+        await refreshLLMAvailability()
+
+        do {
+            let rawText = try String(contentsOf: originalNoteURL, encoding: .utf8)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !rawText.isEmpty else {
+                restoreCaptureStateAfterManualLLMAction()
+                llmStatusText = L10n.tr("app.llm.no_saved_note")
+                return
+            }
+
+            isPreparingLLM = true
+            phase = .processing
+            statusText = L10n.tr("app.status.fixing_text")
+            detailText = originalNoteURL.lastPathComponent
+
+            let fixedContent = try await llmPostProcessingService.postProcess(
+                transcription: rawText,
+                progress: { [weak self] summary, detail in
+                    self?.llmStatusText = summary
+                    self?.statusText = summary
+                    if let detail {
+                        self?.detailText = detail
+                    }
+                }
+            )
+
+            preparedLLMModel = .cleanupModel
+            llmStatusText = L10n.format("app.llm.ready_model", LocalLLMModel.cleanupModel.label)
+            statusText = L10n.tr("app.status.saving_fixed_note")
+            detailText = originalNoteURL.lastPathComponent
+
+            let fixedNoteURL = try noteExporter.saveFixedNote(content: fixedContent, basedOn: originalNoteURL)
+
+            if settings.copySavedNoteToClipboard {
+                copyToClipboard(fixedContent.body)
+            }
+
+            lastSavedNoteURL = fixedNoteURL
+            phase = .success
+            statusText = settings.copySavedNoteToClipboard
+                ? L10n.format("app.status.fixed_saved_and_copied", fixedNoteURL.lastPathComponent)
+                : L10n.format("app.status.fixed_saved", fixedNoteURL.lastPathComponent)
+            detailText = fixedNoteURL.path
+            scheduleReturnToIdleAfterSuccess()
+        } catch {
+            await refreshLLMAvailability()
+            restoreCaptureStateAfterManualLLMAction()
+            llmStatusText = error.localizedDescription
+        }
+
+        isPreparingLLM = false
+    }
+
+    private func restoreCaptureStateAfterManualLLMAction() {
+        if isCaptureReady {
+            phase = .idle
+            statusText = idleStatusText
+            detailText = idleDetailText
+        } else {
+            phase = .error
+            statusText = L10n.format("app.whisper.not_ready", settings.whisperModel.title)
+            detailText = L10n.tr("app.whisper.choose_and_download")
+        }
     }
 }

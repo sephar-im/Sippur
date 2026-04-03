@@ -30,7 +30,7 @@ struct MainCaptureView: View {
                 isEnabled: isInteractive
             )
         }
-        .frame(width: 184, height: 184)
+        .frame(width: CaptureCircleView.panelSize, height: CaptureCircleView.panelSize)
         .background(Color.clear)
     }
 }
