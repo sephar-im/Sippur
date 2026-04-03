@@ -22,8 +22,7 @@ struct SettingsWindowView: View {
                     model: model,
                     settings: settings,
                     setGlobalShortcut: setGlobalShortcut,
-                    showsFirstUseHelp: false,
-                    showsAdvancedLLMControls: true
+                    showsFirstUseHelp: false
                 )
             }
             .padding(20)

@@ -17,10 +17,10 @@ final class AppModel: ObservableObject {
     @Published private(set) var hasBlockingSetupFailure = false
     @Published private(set) var whisperStatusText = ""
     @Published private(set) var installedWhisperModels: Set<WhisperModelChoice> = []
-    @Published private(set) var llmStatusText = L10n.format("app.llm.manual_fix_available", LocalLLMModel.cleanupModel.label)
+    @Published private(set) var llmStatusText = L10n.tr("app.llm.connect_to_ollama")
     @Published private(set) var isPreparingLLM = false
-    @Published private(set) var isOllamaInstalled = false
-    @Published private(set) var preparedLLMModel: LocalLLMModel?
+    @Published private(set) var isLLMConnected = false
+    @Published private(set) var availableLLMModels: [String] = []
 
     let settings: SettingsStore
     private let recordingService: RecordingServicing
@@ -69,7 +69,6 @@ final class AppModel: ObservableObject {
         guard !hasStartedDependencyBootstrap else { return }
         hasStartedDependencyBootstrap = true
 
-        await refreshLLMAvailability()
         await bootstrapRequiredDependencies()
     }
 
@@ -103,11 +102,23 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func removeDownloadedLLM() {
+    func setLLMConnectionEnabled(_ isEnabled: Bool) {
         guard !isPreparingLLM else { return }
 
-        Task {
-            await removeSelectedLLM()
+        if isEnabled {
+            Task {
+                await connectToOllama()
+            }
+        } else {
+            disconnectFromOllama()
+        }
+    }
+
+    func setSelectedLLMModel(_ modelName: String) {
+        settings.setSelectedLLMModelName(modelName)
+
+        if isLLMConnected {
+            llmStatusText = L10n.format("app.llm.connected_model", modelName)
         }
     }
 
@@ -230,20 +241,13 @@ final class AppModel: ObservableObject {
         successResetTask = nil
     }
 
+    var selectedLLMModelName: String? {
+        settings.selectedLLMModelName
+    }
+
     private func bootstrapRequiredDependencies() async {
         guard !isBootstrappingDependencies else { return }
         refreshWhisperAvailability()
-    }
-
-    private func refreshLLMAvailability() async {
-        isOllamaInstalled = await llmPostProcessingService.isOllamaInstalled()
-        if preparedLLMModel != nil {
-            llmStatusText = L10n.format("app.llm.ready_model", LocalLLMModel.cleanupModel.label)
-        } else if isOllamaInstalled {
-            llmStatusText = L10n.format("app.llm.manual_fix_available", LocalLLMModel.cleanupModel.label)
-        } else {
-            llmStatusText = L10n.tr("app.llm.install_ollama")
-        }
     }
 
     private func transitionToError(_ message: String) {
@@ -253,23 +257,45 @@ final class AppModel: ObservableObject {
         detailText = recoverableErrorDetailText
     }
 
-    private func removeSelectedLLM() async {
+    private func connectToOllama() async {
         isPreparingLLM = true
+        llmStatusText = L10n.tr("llm.progress.checking_ollama")
 
-        do {
-            let removedModel = try await llmPostProcessingService.removeModel(
-                progress: { [weak self] summary, detail in
-                    self?.llmStatusText = summary
-                    _ = detail
-                }
-            )
-            preparedLLMModel = nil
-            llmStatusText = L10n.format("app.llm.removed_model", removedModel.label)
-        } catch {
-            llmStatusText = error.localizedDescription
+        defer {
+            isPreparingLLM = false
         }
 
-        isPreparingLLM = false
+        do {
+            let modelNames = try await llmPostProcessingService.fetchAvailableModels(
+                progress: { [weak self] summary, detail in
+                    self?.llmStatusText = detail.map { "\(summary) · \($0)" } ?? summary
+                }
+            )
+
+            availableLLMModels = modelNames
+            isLLMConnected = true
+
+            if let selectedLLMModelName,
+               modelNames.contains(selectedLLMModelName) {
+                llmStatusText = L10n.format("app.llm.connected_model", selectedLLMModelName)
+            } else if let firstModel = modelNames.first {
+                settings.setSelectedLLMModelName(firstModel)
+                llmStatusText = L10n.format("app.llm.connected_model", firstModel)
+            } else {
+                settings.setSelectedLLMModelName(nil)
+                llmStatusText = L10n.tr("app.llm.no_models_found")
+            }
+        } catch {
+            isLLMConnected = false
+            availableLLMModels = []
+            llmStatusText = error.localizedDescription
+        }
+    }
+
+    private func disconnectFromOllama() {
+        isLLMConnected = false
+        availableLLMModels = []
+        llmStatusText = L10n.tr("app.llm.connect_to_ollama")
     }
 
     private func copyToClipboard(_ text: String) {
@@ -367,7 +393,17 @@ final class AppModel: ObservableObject {
         }
 
         cancelPendingSuccessReset()
-        await refreshLLMAvailability()
+
+        guard isLLMConnected else {
+            llmStatusText = L10n.tr("app.llm.connect_to_ollama")
+            return
+        }
+
+        guard let selectedLLMModelName,
+              availableLLMModels.contains(selectedLLMModelName) else {
+            llmStatusText = L10n.tr("app.llm.choose_model")
+            return
+        }
 
         do {
             let rawText = try String(contentsOf: originalNoteURL, encoding: .utf8)
@@ -385,6 +421,7 @@ final class AppModel: ObservableObject {
 
             let fixedContent = try await llmPostProcessingService.postProcess(
                 transcription: rawText,
+                modelName: selectedLLMModelName,
                 progress: { [weak self] summary, detail in
                     self?.llmStatusText = summary
                     self?.statusText = summary
@@ -394,8 +431,7 @@ final class AppModel: ObservableObject {
                 }
             )
 
-            preparedLLMModel = .cleanupModel
-            llmStatusText = L10n.format("app.llm.ready_model", LocalLLMModel.cleanupModel.label)
+            llmStatusText = L10n.format("app.llm.connected_model", selectedLLMModelName)
             statusText = L10n.tr("app.status.saving_fixed_note")
             detailText = originalNoteURL.lastPathComponent
 
@@ -413,7 +449,6 @@ final class AppModel: ObservableObject {
             detailText = fixedNoteURL.path
             scheduleReturnToIdleAfterSuccess()
         } catch {
-            await refreshLLMAvailability()
             restoreCaptureStateAfterManualLLMAction()
             llmStatusText = error.localizedDescription
         }

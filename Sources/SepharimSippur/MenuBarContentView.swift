@@ -57,8 +57,7 @@ struct MenuBarContentView: View {
                 model: model,
                 settings: settings,
                 setGlobalShortcut: setGlobalShortcut,
-                showsFirstUseHelp: true,
-                showsAdvancedLLMControls: false
+                showsFirstUseHelp: true
             )
 
             Divider()

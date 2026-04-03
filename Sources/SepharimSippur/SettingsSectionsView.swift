@@ -6,12 +6,25 @@ struct SettingsSectionsView: View {
 
     let setGlobalShortcut: (GlobalShortcutMonitor.Shortcut?) -> Void
     let showsFirstUseHelp: Bool
-    let showsAdvancedLLMControls: Bool
 
     private var whisperModelBinding: Binding<WhisperModelChoice> {
         Binding(
             get: { settings.whisperModel },
             set: { model.setWhisperModel($0) }
+        )
+    }
+
+    private var llmConnectionBinding: Binding<Bool> {
+        Binding(
+            get: { model.isLLMConnected || model.isPreparingLLM },
+            set: { model.setLLMConnectionEnabled($0) }
+        )
+    }
+
+    private var llmModelBinding: Binding<String> {
+        Binding(
+            get: { model.selectedLLMModelName ?? model.availableLLMModels.first ?? "" },
+            set: { model.setSelectedLLMModel($0) }
         )
     }
 
@@ -135,7 +148,28 @@ struct SettingsSectionsView: View {
                 Button(L10n.tr("settings.llm.fix_last_text")) {
                     model.fixLastSavedNote()
                 }
-                .disabled(model.lastSavedNoteURL == nil || model.phase == .recording || model.phase == .processing || model.isPreparingLLM)
+                .disabled(
+                    model.lastSavedNoteURL == nil ||
+                    model.phase == .recording ||
+                    model.phase == .processing ||
+                    model.isPreparingLLM ||
+                    !model.isLLMConnected ||
+                    model.selectedLLMModelName == nil
+                )
+
+                Toggle(L10n.tr("settings.llm.connect"), isOn: llmConnectionBinding)
+                    .toggleStyle(.switch)
+                    .disabled(model.phase == .recording || model.phase == .processing || model.isPreparingLLM)
+
+                if model.isLLMConnected, !model.availableLLMModels.isEmpty {
+                    Picker(L10n.tr("settings.llm.model"), selection: llmModelBinding) {
+                        ForEach(model.availableLLMModels, id: \.self) { modelName in
+                            Text(modelName).tag(modelName)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .disabled(model.isPreparingLLM)
+                }
 
                 Text(model.llmStatusText)
                     .font(.system(size: 11, weight: .regular, design: .rounded))
@@ -149,28 +183,16 @@ struct SettingsSectionsView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
-                if showsAdvancedLLMControls {
-                    if model.isOllamaInstalled, model.preparedLLMModel != nil {
-                        Text(L10n.format("settings.llm.uses_model", LocalLLMModel.cleanupModel.label))
-                            .font(.system(size: 11, weight: .regular, design: .rounded))
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-
-                        Button(L10n.tr("settings.llm.remove_downloaded_model")) {
-                            model.removeDownloadedLLM()
-                        }
-                        .disabled(model.isPreparingLLM)
-                    } else if model.isOllamaInstalled {
-                        Text(L10n.format("settings.llm.no_local_model", LocalLLMModel.cleanupModel.label))
-                            .font(.system(size: 11, weight: .regular, design: .rounded))
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    } else {
-                        Text(L10n.tr("settings.llm.install_ollama"))
-                            .font(.system(size: 11, weight: .regular, design: .rounded))
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
+                if model.isLLMConnected && model.availableLLMModels.isEmpty {
+                    Text(L10n.tr("settings.llm.no_models_found"))
+                        .font(.system(size: 11, weight: .regular, design: .rounded))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else if !model.isLLMConnected {
+                    Text(L10n.tr("settings.llm.connect_first"))
+                        .font(.system(size: 11, weight: .regular, design: .rounded))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }

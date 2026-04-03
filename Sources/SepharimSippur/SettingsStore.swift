@@ -6,6 +6,7 @@ final class SettingsStore: ObservableObject {
     private enum Keys {
         static let outputFolderPath = "outputFolderPath"
         static let whisperModel = "whisperModel"
+        static let selectedLLMModelName = "selectedLLMModelName"
         static let copySavedNoteToClipboard = "copySavedNoteToClipboard"
         static let hasSeenFirstUseHelp = "hasSeenFirstUseHelp"
         static let hasSeenLLMCleanupHelp = "hasSeenLLMCleanupHelp"
@@ -20,6 +21,16 @@ final class SettingsStore: ObservableObject {
     @Published var whisperModel: WhisperModelChoice {
         didSet {
             userDefaults.set(whisperModel.rawValue, forKey: Keys.whisperModel)
+        }
+    }
+
+    @Published private(set) var selectedLLMModelName: String? {
+        didSet {
+            if let selectedLLMModelName, !selectedLLMModelName.isEmpty {
+                userDefaults.set(selectedLLMModelName, forKey: Keys.selectedLLMModelName)
+            } else {
+                userDefaults.removeObject(forKey: Keys.selectedLLMModelName)
+            }
         }
     }
 
@@ -57,6 +68,7 @@ final class SettingsStore: ObservableObject {
 
         outputFolderURL = storedPath.map(URL.init(fileURLWithPath:)) ?? defaultFolder
         whisperModel = WhisperModelChoice(rawValue: userDefaults.string(forKey: Keys.whisperModel) ?? "") ?? .medium
+        selectedLLMModelName = userDefaults.string(forKey: Keys.selectedLLMModelName)
         if let storedKeyCode = userDefaults.object(forKey: Keys.shortcutKeyCode) as? NSNumber,
            let storedModifiers = userDefaults.object(forKey: Keys.shortcutCarbonModifiers) as? NSNumber,
            let storedDisplayName = userDefaults.string(forKey: Keys.shortcutDisplayName) {
@@ -95,6 +107,10 @@ final class SettingsStore: ObservableObject {
 
     func setWhisperModel(_ model: WhisperModelChoice) {
         whisperModel = model
+    }
+
+    func setSelectedLLMModelName(_ modelName: String?) {
+        selectedLLMModelName = modelName
     }
 
     func chooseOutputFolder() {

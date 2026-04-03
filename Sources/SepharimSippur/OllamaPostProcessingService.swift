@@ -3,18 +3,13 @@ import Foundation
 
 @MainActor
 protocol LLMPostProcessingServicing {
-    func isOllamaInstalled() async -> Bool
-
-    func prepare(
+    func fetchAvailableModels(
         progress: @escaping @MainActor (String, String?) -> Void
-    ) async throws -> LocalLLMModel
-
-    func removeModel(
-        progress: @escaping @MainActor (String, String?) -> Void
-    ) async throws -> LocalLLMModel
+    ) async throws -> [String]
 
     func postProcess(
         transcription: String,
+        modelName: String,
         progress: @escaping @MainActor (String, String?) -> Void
     ) async throws -> NoteContent
 }
@@ -25,6 +20,7 @@ final class OllamaPostProcessingService: LLMPostProcessingServicing {
         case ollamaNotInstalled
         case ollamaUnavailable
         case invalidResponse
+        case modelNotAvailable(String)
         case generationFailed(String)
 
         var errorDescription: String? {
@@ -35,6 +31,8 @@ final class OllamaPostProcessingService: LLMPostProcessingServicing {
                 return L10n.tr("llm.error.unavailable")
             case .invalidResponse:
                 return L10n.tr("llm.error.invalid_response")
+            case .modelNotAvailable(let modelName):
+                return L10n.format("llm.error.model_not_available", modelName)
             case .generationFailed(let message):
                 return message
             }
@@ -53,17 +51,6 @@ final class OllamaPostProcessingService: LLMPostProcessingServicing {
         }
 
         let models: [ModelEntry]
-    }
-
-    private struct PullRequest: Encodable {
-        let model: String
-    }
-
-    private struct PullProgressChunk: Decodable {
-        let status: String?
-        let total: Int64?
-        let completed: Int64?
-        let error: String?
     }
 
     private struct GenerateRequest: Encodable {
@@ -101,8 +88,6 @@ final class OllamaPostProcessingService: LLMPostProcessingServicing {
     private let fileManager: FileManager
     private let urlSession: URLSession
     private let apiBaseURL: URL
-    private let cleanupModel = LocalLLMModel.cleanupModel
-    private var preparedModel: LocalLLMModel?
 
     init(
         fileManager: FileManager = .default,
@@ -114,73 +99,37 @@ final class OllamaPostProcessingService: LLMPostProcessingServicing {
         self.apiBaseURL = apiBaseURL
     }
 
-    func isOllamaInstalled() async -> Bool {
-        (try? locateInstallation()) != nil
-    }
-
-    func prepare(
+    func fetchAvailableModels(
         progress: @escaping @MainActor (String, String?) -> Void
-    ) async throws -> LocalLLMModel {
-        let selectedModel = cleanupModel
-
-        if preparedModel == selectedModel, (try? await fetchVersion()) != nil {
-            progress(L10n.tr("llm.progress.ready"), nil)
-            return selectedModel
-        }
-
+    ) async throws -> [String] {
         progress(L10n.tr("llm.progress.checking_ollama"), nil)
         let installation = try locateInstallation()
         try await ensureOllamaIsReachable(using: installation, progress: progress)
 
-        progress(L10n.tr("llm.progress.checking_local_model"), nil)
-        if try await !isModelAvailable(selectedModel) {
-            progress(L10n.tr("llm.progress.downloading_local_model"), L10n.tr("llm.progress.downloading_local_model_first_time"))
-            try await pullModel(selectedModel, progress: progress)
-        }
-
-        preparedModel = selectedModel
+        progress(L10n.tr("llm.progress.loading_models"), nil)
+        let models = try await fetchAvailableModelsFromOllama()
         progress(L10n.tr("llm.progress.ready"), nil)
-        return selectedModel
-    }
-
-    func removeModel(
-        progress: @escaping @MainActor (String, String?) -> Void
-    ) async throws -> LocalLLMModel {
-        let selectedModel = cleanupModel
-
-        progress(L10n.tr("llm.progress.checking_ollama"), nil)
-        let installation = try locateInstallation()
-        try await ensureOllamaIsReachable(using: installation, progress: progress)
-
-        guard try await isModelAvailable(selectedModel) else {
-            if preparedModel == selectedModel {
-                preparedModel = nil
-            }
-            progress(L10n.tr("llm.progress.no_downloaded_model"), nil)
-            return selectedModel
-        }
-
-        progress(L10n.tr("llm.progress.removing_model"), selectedModel.rawValue)
-        try await runOllamaCommand(
-            executableURL: installation.executableURL,
-            arguments: ["rm", selectedModel.rawValue]
-        )
-        if preparedModel == selectedModel {
-            preparedModel = nil
-        }
-        progress(L10n.tr("llm.progress.downloaded_removed"), nil)
-        return selectedModel
+        return models
     }
 
     func postProcess(
         transcription: String,
+        modelName: String,
         progress: @escaping @MainActor (String, String?) -> Void
     ) async throws -> NoteContent {
-        let model = try await prepare(progress: progress)
+        progress(L10n.tr("llm.progress.checking_ollama"), nil)
+        let installation = try locateInstallation()
+        try await ensureOllamaIsReachable(using: installation, progress: progress)
+
+        let availableModels = try await fetchAvailableModelsFromOllama()
+        guard availableModels.contains(modelName) else {
+            throw OllamaPostProcessingError.modelNotAvailable(modelName)
+        }
+
         progress(L10n.tr("llm.progress.cleaning_transcription"), nil)
 
         var request = GenerateRequest(
-            model: model.rawValue,
+            model: modelName,
             prompt: prompt(transcription: transcription),
             system: systemPrompt(),
             format: "json",
@@ -194,7 +143,7 @@ final class OllamaPostProcessingService: LLMPostProcessingServicing {
 
         if shouldRetryForMoreCleanup(original: transcription, cleaned: cleanedBody) {
             request = GenerateRequest(
-                model: model.rawValue,
+                model: modelName,
                 prompt: strongerRetryPrompt(
                     transcription: transcription,
                     previousResult: cleanedBody
@@ -316,49 +265,22 @@ final class OllamaPostProcessingService: LLMPostProcessingServicing {
         return try JSONDecoder().decode(VersionResponse.self, from: data).version
     }
 
-    private func isModelAvailable(_ model: LocalLLMModel) async throws -> Bool {
+    private func fetchAvailableModelsFromOllama() async throws -> [String] {
         let requestURL = apiBaseURL.appending(path: "/api/tags")
         let (data, response) = try await urlSession.data(from: requestURL)
         try validateHTTPResponse(response, data: data)
 
         let tagsResponse = try JSONDecoder().decode(ModelTagsResponse.self, from: data)
-        return tagsResponse.models.contains { entry in
-            entry.name == model.rawValue || entry.model == model.rawValue
-        }
-    }
-
-    private func pullModel(
-        _ model: LocalLLMModel,
-        progress: @escaping @MainActor (String, String?) -> Void
-    ) async throws {
-        let requestURL = apiBaseURL.appending(path: "/api/pull")
-        var urlRequest = URLRequest(url: requestURL)
-        urlRequest.httpMethod = "POST"
-        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        urlRequest.httpBody = try JSONEncoder().encode(PullRequest(model: model.rawValue))
-
-        let (bytes, response) = try await urlSession.bytes(for: urlRequest)
-        try validateHTTPResponse(response, data: nil)
-
-        for try await line in bytes.lines {
-            let trimmedLine = line.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmedLine.isEmpty else { continue }
-            guard let lineData = trimmedLine.data(using: .utf8) else { continue }
-
-            let chunk = try JSONDecoder().decode(PullProgressChunk.self, from: lineData)
-            if let error = chunk.error {
-                throw OllamaPostProcessingError.generationFailed(error)
+        let modelNames = Set(
+            tagsResponse.models.compactMap { entry in
+                let candidate = entry.name.isEmpty ? entry.model : entry.name
+                let trimmed = candidate.trimmingCharacters(in: .whitespacesAndNewlines)
+                return trimmed.isEmpty ? nil : trimmed
             }
+        )
 
-            let detail: String?
-            if let completed = chunk.completed, let total = chunk.total, total > 0 {
-                let percent = Int((Double(completed) / Double(total)) * 100)
-                detail = "\(max(0, min(percent, 100)))%"
-            } else {
-                detail = nil
-            }
-
-            progress(chunk.status ?? L10n.tr("llm.progress.downloading_local_model"), detail)
+        return modelNames.sorted { lhs, rhs in
+            lhs.localizedCaseInsensitiveCompare(rhs) == .orderedAscending
         }
     }
 
@@ -533,38 +455,4 @@ final class OllamaPostProcessingService: LLMPostProcessingServicing {
         return nil
     }
 
-    private func runOllamaCommand(executableURL: URL, arguments: [String]) async throws {
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            let process = Process()
-            let outputPipe = Pipe()
-
-            process.executableURL = executableURL
-            process.arguments = arguments
-            process.standardOutput = outputPipe
-            process.standardError = outputPipe
-
-            process.terminationHandler = { process in
-                let data = outputPipe.fileHandleForReading.readDataToEndOfFile()
-                let output = String(decoding: data, as: UTF8.self)
-
-                if process.terminationStatus == 0 {
-                    continuation.resume()
-                } else {
-                    continuation.resume(
-                        throwing: OllamaPostProcessingError.generationFailed(
-                            output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                                ? L10n.tr("llm.error.remove_failed")
-                                : output.trimmingCharacters(in: .whitespacesAndNewlines)
-                        )
-                    )
-                }
-            }
-
-            do {
-                try process.run()
-            } catch {
-                continuation.resume(throwing: error)
-            }
-        }
-    }
 }

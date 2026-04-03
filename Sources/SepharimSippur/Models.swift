@@ -128,21 +128,6 @@ enum WhisperModelChoice: String, CaseIterable, Identifiable, Hashable {
     }
 }
 
-enum LocalLLMModel: String, Equatable, Hashable, Identifiable {
-    case qwen25_15b = "qwen2.5:1.5b"
-
-    var id: String { rawValue }
-
-    static let cleanupModel: LocalLLMModel = .qwen25_15b
-
-    var label: String {
-        switch self {
-        case .qwen25_15b:
-            return "Qwen 1.5B"
-        }
-    }
-}
-
 struct NoteContent: Equatable {
     let body: String
     let title: String?

@@ -97,44 +97,29 @@ private final class MockTranscriptionService: TranscriptionServicing {
 
 @MainActor
 private final class MockLLMPostProcessingService: LLMPostProcessingServicing {
-    var ollamaInstalled = true
-    var prepareCalls = 0
-    var removeCalls = 0
+    var fetchModelsCalls = 0
     var postProcessCalls = 0
-    var preparedModel: LocalLLMModel = .qwen25_15b
-    var removedModel: LocalLLMModel?
-    var removeResult: Result<Void, Error> = .success(())
+    var availableModelsResult: Result<[String], Error> = .success(["qwen2.5:1.5b"])
     var postProcessResult: Result<NoteContent, Error> = .success(
         NoteContent(body: "Cleaned transcription", title: "Cleaned Title")
     )
+    var lastUsedModelName: String?
 
-    func isOllamaInstalled() async -> Bool {
-        ollamaInstalled
-    }
-
-    func prepare(
+    func fetchAvailableModels(
         progress: @escaping @MainActor (String, String?) -> Void
-    ) async throws -> LocalLLMModel {
-        prepareCalls += 1
-        progress("LLM ready.", nil)
-        return preparedModel
-    }
-
-    func removeModel(
-        progress: @escaping @MainActor (String, String?) -> Void
-    ) async throws -> LocalLLMModel {
-        removeCalls += 1
-        removedModel = preparedModel
-        progress("Downloaded LLM removed.", nil)
-        try removeResult.get()
-        return preparedModel
+    ) async throws -> [String] {
+        fetchModelsCalls += 1
+        progress("Checking Ollama.", nil)
+        return try availableModelsResult.get()
     }
 
     func postProcess(
         transcription: String,
+        modelName: String,
         progress: @escaping @MainActor (String, String?) -> Void
     ) async throws -> NoteContent {
         postProcessCalls += 1
+        lastUsedModelName = modelName
         progress("Cleaning transcription locally.", nil)
         return try postProcessResult.get()
     }
@@ -302,10 +287,6 @@ final class SepharimSippurTests: XCTestCase {
         }
     }
 
-    func testFixedCleanupModelUsesQwen15B() {
-        XCTAssertEqual(LocalLLMModel.cleanupModel, .qwen25_15b)
-    }
-
     @MainActor
     func testBootstrapOnLaunchPreparesTranscriptionAndReturnsToIdle() async {
         let transcriptionService = MockTranscriptionService()
@@ -358,7 +339,7 @@ final class SepharimSippurTests: XCTestCase {
     }
 
     @MainActor
-    func testBootstrapOnLaunchChecksLLMAvailabilityWithoutPreparingModel() async {
+    func testBootstrapOnLaunchLeavesLLMDisconnected() async {
         let transcriptionService = MockTranscriptionService()
         let llmService = MockLLMPostProcessingService()
         let suiteName = "SepharimSippurTests.\(UUID().uuidString)"
@@ -374,15 +355,17 @@ final class SepharimSippurTests: XCTestCase {
         await model.bootstrapDependenciesOnLaunch()
 
         XCTAssertEqual(transcriptionService.prepareCalls, 0)
-        XCTAssertEqual(llmService.prepareCalls, 0)
-        XCTAssertEqual(model.llmStatusText, L10n.format("app.llm.manual_fix_available", LocalLLMModel.cleanupModel.label))
+        XCTAssertEqual(llmService.fetchModelsCalls, 0)
+        XCTAssertFalse(model.isLLMConnected)
+        XCTAssertEqual(model.llmStatusText, L10n.tr("app.llm.connect_to_ollama"))
     }
 
     @MainActor
-    func testRemoveDownloadedLLMUsesSelectedModel() async {
+    func testConnectToOllamaLoadsInstalledModelsAndSelectsFirst() async {
         let transcriptionService = MockTranscriptionService()
         let llmService = MockLLMPostProcessingService()
-        let suiteName = "SepharimSippurTests.remove-llm.\(UUID().uuidString)"
+        llmService.availableModelsResult = .success(["llama3.2:3b", "qwen2.5:1.5b"])
+        let suiteName = "SepharimSippurTests.connect-ollama.\(UUID().uuidString)"
         let settings = makeTestSettingsStore(suiteName: suiteName, reset: true)
 
         let model = AppModel(
@@ -392,14 +375,14 @@ final class SepharimSippurTests: XCTestCase {
             llmPostProcessingService: llmService
         )
 
-        await model.bootstrapDependenciesOnLaunch()
-        model.removeDownloadedLLM()
-        try? await Task.sleep(nanoseconds: 50_000_000)
+        model.setLLMConnectionEnabled(true)
+        try? await Task.sleep(nanoseconds: 100_000_000)
 
-        XCTAssertEqual(llmService.removeCalls, 1)
-        XCTAssertEqual(llmService.removedModel, .qwen25_15b)
-        XCTAssertNil(model.preparedLLMModel)
-        XCTAssertEqual(model.llmStatusText, L10n.format("app.llm.removed_model", LocalLLMModel.cleanupModel.label))
+        XCTAssertEqual(llmService.fetchModelsCalls, 1)
+        XCTAssertTrue(model.isLLMConnected)
+        XCTAssertEqual(model.availableLLMModels, ["llama3.2:3b", "qwen2.5:1.5b"])
+        XCTAssertEqual(model.selectedLLMModelName, "llama3.2:3b")
+        XCTAssertEqual(model.llmStatusText, L10n.format("app.llm.connected_model", "llama3.2:3b"))
     }
 
     @MainActor
@@ -476,17 +459,20 @@ final class SepharimSippurTests: XCTestCase {
         )
 
         await model.bootstrapDependenciesOnLaunch()
+        model.setLLMConnectionEnabled(true)
+        try? await Task.sleep(nanoseconds: 100_000_000)
         await model.performCaptureToggle()
         await model.performCaptureToggle()
         model.fixLastSavedNote()
         try? await Task.sleep(nanoseconds: 300_000_000)
 
         XCTAssertEqual(llmService.postProcessCalls, 1)
+        XCTAssertEqual(llmService.lastUsedModelName, "qwen2.5:1.5b")
         XCTAssertEqual(exporter.saveFixedCalls, 1)
         XCTAssertEqual(exporter.lastFixedContent, NoteContent(body: "Cleaned transcription", title: "Cleaned Title"))
         XCTAssertEqual(exporter.lastFixedBaseURL?.path, "/tmp/test-note.txt")
         XCTAssertEqual(model.lastSavedNoteURL?.path, "/tmp/test-note fixed.txt")
-        XCTAssertEqual(model.llmStatusText, L10n.format("app.llm.ready_model", LocalLLMModel.cleanupModel.label))
+        XCTAssertEqual(model.llmStatusText, L10n.format("app.llm.connected_model", "qwen2.5:1.5b"))
     }
 
     @MainActor
@@ -602,6 +588,8 @@ final class SepharimSippurTests: XCTestCase {
         )
 
         await model.bootstrapDependenciesOnLaunch()
+        model.setLLMConnectionEnabled(true)
+        try? await Task.sleep(nanoseconds: 100_000_000)
         await model.performCaptureToggle()
         await model.performCaptureToggle()
         model.fixLastSavedNote()
