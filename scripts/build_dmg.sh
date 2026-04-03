@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 APP_NAME="${APP_NAME:-Sepharim Sippur}"
-VERSION="${VERSION:-0.1.0}"
+VERSION="${VERSION:-1.0}"
 OUTPUT_ROOT="${OUTPUT_ROOT:-$ROOT_DIR/dist}"
 OUTPUT_DIR="${OUTPUT_DIR:-$OUTPUT_ROOT/$VERSION}"
 SIGNING_IDENTITY="${SIGNING_IDENTITY:--}"

@@ -406,7 +406,6 @@ final class OllamaPostProcessingService: LLMPostProcessingServicing {
         return """
         Output target: plain text export
         Generate title: no
-        Add Obsidian wikilinks: no
         Keep the same language as the raw transcription: yes
         Prefer final self-corrections over earlier mistaken wording: yes
         Clean up punctuation and paragraphing: yes
